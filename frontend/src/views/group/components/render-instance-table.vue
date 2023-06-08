@@ -58,7 +58,7 @@
                             v-if="isShowView(row)"
                             @click.stop="handleViewResource(row)" />
                         <template v-if="!isUserGroupDetail ? false : true && row.showDelete && !externalDelete">
-                            <Icon class="remove-icon" type="close-small" @click.stop="handleShowDelDialog(row)" />
+                            <Icon class="remove-icon" type="close-small" @click.stop="toHandleDelete(row)" />
                         </template>
                     </template>
                     <template v-else>
@@ -580,45 +580,9 @@
                     this.$set(row, 'showDelete', false);
                 }
             },
-            handleShowDelDialog (row) {
-                let delRelatedActions = [];
-                const actionList = [];
-                const { id, mode, name } = row;
-                const isCustom = ['custom'].includes(mode);
-                const policyIdList = this.tableList.map(item => item.id);
-                const linearActionList = this.linearActionList.filter(item => policyIdList.includes(item.id));
-                const curAction = linearActionList.find(item => item.id === id);
-                const hasRelatedActions = curAction && curAction.related_actions && curAction.related_actions.length;
-                linearActionList.forEach(item => {
-                    // 如果这里过滤自己还能在其他数据找到相同的related_actions，就代表有其他数据也关联了相同的操作
-                    if (isCustom && hasRelatedActions && item.related_actions && item.related_actions.length
-                        && item.id !== id) {
-                        delRelatedActions = item.related_actions.filter(v => curAction.related_actions.includes(v));
-                    }
-                    if (item.related_actions && item.related_actions.includes(id)) {
-                        actionList.push(item.name);
-                    }
-                });
-                if (actionList.length) {
-                    this.bkMessageInstance = this.$bkMessage({
-                        limit: 1,
-                        theme: 'error',
-                        message: `${this.$t(`m.perm['不能删除当前操作']`)}, ${this.$t(`m.common['【']`)}${actionList.join()}${this.$t(`m.common['】']`)}${this.$t(`m.perm['等']`)}${actionList.length}${this.$t(`m.perm['个操作关联了']`)}${name}`,
-                        ellipsisLine: 10,
-                        ellipsisCopy: true
-                    });
-                    return;
-                }
-                let ids = [row.policy_id];
-                if (isCustom && !delRelatedActions.length && hasRelatedActions) {
-                    const list = [...this.tableList].filter(v => curAction.related_actions.includes(v.id));
-                    if (list.length) {
-                        // eslint-disable-next-line camelcase
-                        ids = [row.policy_id].concat(list.map(v => v.policy_id));
-                    }
-                }
+            toHandleDelete (row) {
                 this.isShowDeleteDialog = true;
-                this.newRow = Object.assign(row, { ids });
+                this.newRow = row;
             },
             handleDelete () {
                 this.$emit('on-delete', this.newRow);

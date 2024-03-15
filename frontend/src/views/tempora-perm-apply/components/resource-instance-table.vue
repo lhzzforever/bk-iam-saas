@@ -211,7 +211,7 @@
       quick-close
       transfer
       :ext-cls="'relate-instance-sideslider'"
-      @update:isShow="handleResourceCancel">
+      @update:isShow="handleResourceCancel('mask')">
       <div slot="content" class="sideslider-content">
         <render-resource
           ref="renderResourceRef"
@@ -227,7 +227,7 @@
       <div slot="footer" style="margin-left: 25px;">
         <bk-button theme="primary" :loading="sliderLoading" :disabled="disabled" @click="handleResourceSubmit">{{ $t(`m.common['保存']`) }}</bk-button>
         <bk-button style="margin-left: 10px;" :disabled="disabled" @click="handleResourcePreview" v-if="isShowPreview">{{ $t(`m.common['预览']`) }}</bk-button>
-        <bk-button style="margin-left: 10px;" :disabled="disabled" @click="handleResourceCancel">{{ $t(`m.common['取消']`) }}</bk-button>
+        <bk-button style="margin-left: 10px;" :disabled="disabled" @click="handleResourceCancel('cancel')">{{ $t(`m.common['取消']`) }}</bk-button>
       </div>
     </bk-sideslider>
 
@@ -350,12 +350,10 @@
         previewResourceParams: {},
         curCopyData: ['none'],
         curCopyType: '',
-
+        curInstanceMode: '',
         curId: '',
         isLoading: false,
-
         isShowAggregateSideslider: false,
-
         aggregateResourceParams: {},
         aggregateIndex: -1,
         aggregateValue: [],
@@ -1005,10 +1003,14 @@
         if (isEmpty) {
           return;
         }
-
         const resItem = this.tableList[this.curIndex].resource_groups[this.curGroupIndex]
           .related_resource_types[this.curResIndex];
         const isConditionEmpty = data.length === 1 && data[0] === 'none';
+        this.curInstanceMode = resItem.selectionMode || '';
+        if (['instance:paste'].includes(resItem.selectionMode)) {
+          resItem.isLimitExceeded = false;
+          resItem.isError = false;
+        }
         if (isConditionEmpty) {
           resItem.condition = ['none'];
           resItem.isLimitExceeded = false;
@@ -1403,15 +1405,26 @@
         this.resourceInstanceEffectTimeTitle = '';
       },
 
-      handleResourceCancel () {
-        let cancelHandler = Promise.resolve();
-        if (window.changeAlert) {
-          cancelHandler = leaveConfirm();
-        }
-        cancelHandler.then(() => {
-          this.isShowResourceInstanceSideslider = false;
-          this.resetDataAfterClose();
-        }, _ => _);
+      handleResourceCancel (payload) {
+        const typeMap = {
+          mask: () => {
+            const { data } = this.$refs.renderResourceRef.handleGetValue();
+            const { hasSelectedCondition } = this.$refs.renderResourceRef;
+            let cancelHandler = Promise.resolve();
+            if (JSON.stringify(data) !== JSON.stringify(hasSelectedCondition)) {
+              cancelHandler = leaveConfirm();
+            }
+            cancelHandler.then(() => {
+              this.isShowResourceInstanceSideslider = false;
+              this.resetDataAfterClose();
+            }, _ => _);
+          },
+          cancel: () => {
+            this.resetDataAfterClose();
+            this.isShowResourceInstanceSideslider = false;
+          }
+        };
+        return typeMap[payload]();
       },
 
       handleExpiredToggle (value, row) {
@@ -1541,7 +1554,7 @@
                       })
                       : [];
                     console.warn('newResourceCount: ' + newResourceCount);
-                    if (newResourceCount > RESOURCE_MAX_LEN) {
+                    if (newResourceCount > RESOURCE_MAX_LEN && !['instance:paste'].includes(this.curInstanceMode)) {
                       resItem.isLimitExceeded = true;
                       flag = true;
                     }

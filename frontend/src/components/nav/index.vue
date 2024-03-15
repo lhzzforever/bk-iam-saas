@@ -274,7 +274,9 @@
     // 人员模板
     [['memberTemplate'], 'memberTemplateNav'],
     // 用户/组织
-    [['userOrgPerm'], 'userOrgPermNav']
+    [['userOrgPerm'], 'userOrgPermNav'],
+    // 管理空间下资源权限管理
+    [['resourcePermManage'], 'resourcePermManageNav']
   ]);
 
   export default {

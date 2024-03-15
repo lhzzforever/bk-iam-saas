@@ -155,7 +155,7 @@
         <TopologyManualInput
           ref="topologyManualInputRef"
           :selection-mode="selectionMode"
-          :system-params="systemParams"
+          :system-params="getSystemParams"
           :resource-value="resourceValue"
           :cur-chain="curChain"
           :cur-selected-chain="curSelectedChain"
@@ -284,6 +284,21 @@
       hasAttribute: {
         type: Boolean,
         default: false
+      },
+      // 处理有bar的场景
+      hasStatusBar: {
+        type: Boolean,
+        default: false
+      },
+      // 处理可以添加新的拓扑实例组的场景
+      hasAddInstance: {
+        type: Boolean,
+        default: false
+      },
+      // 是否显示添加属性或者拓扑实例bar
+      isShowEditAction: {
+        type: Boolean,
+        default: false
       }
     },
     data () {
@@ -341,6 +356,10 @@
       },
       isManualInput () {
         return ['manualInput'].includes(this.curSelectedChain.id) && ['instance:paste'].includes(this.selectionMode);
+      },
+      getSystemParams () {
+        const curChainId = this.curChain.length ? this.curChain[0].id : '';
+        return { ...this.systemParams, ...{ type: curChainId } };
       }
     },
     watch: {
@@ -686,7 +705,9 @@
           curNode.checked = false;
           this.setNodeNoChecked(false, curNode);
           this.$nextTick(() => {
-            this.$refs.topologyRef.$refs.topologyTableRef.toggleRowSelection(curNode, false);
+            this.$refs.topologyRef
+              && this.$refs.topologyRef.$refs
+              && this.$refs.topologyRef.$refs.topologyTableRef.toggleRowSelection(curNode, false);
             if (!this.isOnlyLevel) {
               bus.$emit('update-table-toggleRowSelection', { node: curNode, isChecked: false });
             }
@@ -725,7 +746,9 @@
           curNode.checked = true;
           this.setNodeChecked(true, curNode);
           this.$nextTick(() => {
-            this.$refs.topologyRef.$refs.topologyTableRef.toggleRowSelection(curNode, true);
+            this.$refs.topologyRef
+              && this.$refs.topologyRef.$refs
+              && this.$refs.topologyRef.$refs.topologyTableRef.toggleRowSelection(curNode, true);
             if (!this.isOnlyLevel) {
               bus.$emit('update-table-toggleRowSelection', { node: curNode, isChecked: true });
             }

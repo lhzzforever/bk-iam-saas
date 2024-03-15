@@ -157,7 +157,7 @@
         <TopologyManualInput
           ref="topologyManualInputRef"
           :selection-mode="selectionMode"
-          :system-params="systemParams"
+          :system-params="getSystemParams"
           :resource-value="resourceValue"
           :cur-chain="curChain"
           :cur-selected-chain="curSelectedChain"
@@ -374,6 +374,10 @@
           return curr;
         }, []);
         return list;
+      },
+      getSystemParams () {
+        const curChainId = this.curChain.length ? this.curChain[0].id : '';
+        return { ...this.systemParams, ...{ type: curChainId } };
       }
     },
     watch: {
@@ -456,10 +460,10 @@
       handleTableSearch (payload) {
         const { value } = payload;
         this.curTableKeyWord = value;
-        this.handleTreeSearch(payload);
+        this.handleTreeSearch(payload, true);
       },
 
-      async handleTreeSearch (payload) {
+      async handleTreeSearch (payload, isTable = false) {
         window.changeAlert = true;
         const { index, node, value } = payload;
         this.curSearchObj = Object.assign({}, {
@@ -518,15 +522,11 @@
           this.emptyTreeData = formatCodeData(code, this.emptyTreeData, data.results.length === 0);
           this.subResourceTotal = data.count || 0;
           this.curTableData = data.results || [];
-          const treeData = this.treeData;
+          const treeData = _.cloneDeep(this.treeData);
           const parentNode = treeData.find(item => item.nodeId === node.parentId);
           if (parentNode || (parentNode && !parentNode.children)) {
             parentNode.children = [];
           }
-          this.treeData = treeData.filter(item => {
-            const flag = item.type === 'search' && item.parentId === node.parentId;
-            return flag || !item.parentChain.map(v => v.id).includes(node.parentSyncId);
-          });
           if (data.results.length < 1) {
             const searchEmptyItem = {
               ...SEARCH_EMPTY_ITEM,
@@ -540,6 +540,10 @@
             this.treeData.splice((index + 1), 0, searchEmptyData);
             return;
           }
+          this.treeData = treeData.filter(item => {
+            const flag = item.type === 'search' && item.parentId === node.parentId;
+            return flag || !item.parentChain.map(v => v.id).includes(node.parentSyncId);
+          });
           const totalPage = Math.ceil(data.count / this.limit);
           let isAsync = this.curChain.length > (node.level + 1);
           const loadNodes = data.results.map(item => {
@@ -713,7 +717,10 @@
             type = childType;
             curIds.push(`${id}&${type}`);
           } else {
-            type = this.curChain[item.level].id;
+            const curChainId = item.level > this.curChain.length - 1
+              ? this.curChain[this.curChain.length - 1].id
+              : this.curChain[item.level].id;
+            type = curChainId;
             curIds.push(`${id}&${type}`);
           }
 
@@ -744,7 +751,9 @@
             treeData.forEach((v) => {
               v.checked = false;
               v.disabled = false;
-              this.$refs.topologyRef.$refs.topologyTableRef.toggleRowSelection(v, false);
+              this.$refs.topologyRef
+                && this.$refs.topologyRef.$refs
+                && this.$refs.topologyRef.$refs.topologyTableRef.toggleRowSelection(v, false);
             });
           });
         }
@@ -752,7 +761,9 @@
           curNode.checked = false;
           this.setNodeNoChecked(false, curNode);
           this.$nextTick(() => {
-            this.$refs.topologyRef.$refs.topologyTableRef.toggleRowSelection(curNode, false);
+            this.$refs.topologyRef
+              && this.$refs.topologyRef.$refs
+              && this.$refs.topologyRef.$refs.topologyTableRef.toggleRowSelection(curNode, false);
             if (!this.isOnlyLevel) {
               bus.$emit('update-table-toggleRowSelection', { node: curNode, isChecked: false });
             }
@@ -770,7 +781,10 @@
             type = childType;
             curIds.push(`${id}&${type}`);
           } else {
-            type = this.curChain[item.level].id;
+            const curChainId = item.level > this.curChain.length - 1
+              ? this.curChain[this.curChain.length - 1].id
+              : this.curChain[item.level].id;
+            type = curChainId;
             curIds.push(`${id}&${type}`);
           }
           const chainCheckedFlag = curIds.join('#') === payload;
@@ -793,7 +807,9 @@
           curNode.checked = true;
           this.setNodeChecked(true, curNode);
           this.$nextTick(() => {
-            this.$refs.topologyRef.$refs.topologyTableRef.toggleRowSelection(curNode, true);
+            this.$refs.topologyRef
+              && this.$refs.topologyRef.$refs
+              && this.$refs.topologyRef.$refs.topologyTableRef.toggleRowSelection(curNode, true);
             if (!this.isOnlyLevel) {
               bus.$emit('update-table-toggleRowSelection', { node: curNode, isChecked: true });
             }
@@ -819,11 +835,11 @@
         try {
           const { code, data } = await this.$store.dispatch('permApply/getResources', params);
           this.emptyData = formatCodeData(code, this.emptyData, data.results.length === 0);
+          this.resourceTotal = data.count || 0;
           if (data.results.length < 1) {
             this.searchDisplayText = RESULT_TIP[code];
             return;
           }
-          this.resourceTotal = data.count || 0;
           const totalPage = Math.ceil(data.count / this.limit);
           const isAsync = this.curChain.length > 1;
           this.treeData = data.results.map(item => {
@@ -988,7 +1004,6 @@
             paths: p
           });
         }
-        // console.log(value, node, params, resourceLen, 555);
         this.$emit('on-tree-select', value, node, params, resourceLen);
         // 针对资源权限特殊处理
         if (this.resourceValue) {
@@ -1102,14 +1117,27 @@
           const { code, data } = await this.$store.dispatch('permApply/getResources', params);
           this.emptyTreeData = formatCodeData(code, this.emptyData, data.results.length === 0);
           this.subResourceTotal = data.count || 0;
+          const totalPage = Math.ceil(this.subResourceTotal / this.limit);
+          const curNode = this.treeData.find((item) => `${item.id}&${item.name}` === `${node.id}&${node.name}`);
+          if (curNode) {
+            this.$set(curNode, 'childCount', this.subResourceTotal);
+            this.$set(curNode, 'childPage', totalPage);
+          }
           if (data.results.length < 1) {
             this.removeAsyncNode();
             node.expanded = false;
             node.async = false;
+            const curNode = this.treeData.find((item) => `${item.id}&${item.name}` === `${node.id}&${node.name}`);
+            if (curNode) {
+              if (curNode.async) {
+                this.$set(curNode, 'isExpandNoData', true);
+              }
+              curNode.expanded = false;
+              curNode.async = false;
+            }
             return;
           }
           const curLevel = node.level + 1;
-          const totalPage = Math.ceil(data.count / this.limit);
           let isAsync = this.curChain.length > (curLevel + 1);
           const parentChain = _.cloneDeep(node.parentChain);
           const curLevelNode = this.curChain[node.level] || this.curChain[chainLen - 1];
@@ -1248,13 +1276,13 @@
         if (index > -1) this.treeData.splice(index, 1);
       },
 
-      async handleLoadMore (node, index) {
+      async handleLoadMore (node, index, isTable = false) {
         console.log('handleLoadMore', node, index);
         window.changeAlert = true;
         node.current = node.current + 1;
         node.loadingMore = true;
         const chainLen = this.curChain.length;
-        let keyword = this.curKeyword;
+        let keyword = !isTable ? this.curKeyword : '';
         if (Object.keys(this.curSearchObj).length) {
           if (node.parentId === this.curSearchObj.parentId) {
             keyword = this.curSearchObj.value;
@@ -1542,7 +1570,7 @@
 
       // 多层拓扑分页
       async handleTablePageChange (node, index) {
-        this.handleLoadMore(node, index);
+        this.handleLoadMore(node, index, true);
       }
     }
   };

@@ -676,7 +676,6 @@
       },
 
       handleRemoteRtx (value) {
-        console.log('value', value);
         return fuzzyRtxSearch(value).then((data) => {
           return data.results;
         });

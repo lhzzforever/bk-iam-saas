@@ -119,11 +119,11 @@ export default class CompareCondition {
     this.isHovering = false;
     this.id = payload.id || '';
     this.status = payload.tag;
-    this.initIntance(payload);
+    this.initInstance(payload);
     this.initAttribute(payload);
   }
 
-  initIntance (payload) {
+  initInstance (payload) {
     if (payload.instances && payload.instances.length > 0) {
       this.instance = payload.instances.map(item => new Instance(item));
     }

@@ -7,33 +7,41 @@
     quick-close
     transfer
     ext-cls="iam-aggregate-resource-sideslider-cls"
-    @update:isShow="handleCancel">
-    <div slot="content" class="content" v-bkloading="{ isLoading: loading, opacity: 1 }">
+    @update:isShow="handleCancel"
+  >
+    <div
+      slot="content"
+      class="content"
+      v-bkloading="{ isLoading: loading, opacity: 1 }"
+    >
       <div
         v-if="isShowUnlimited"
         class="no-limited-wrapper flex-between"
         :style="{
-          borderBottom: !isHide ? 0 : '' ,
+          borderBottom: !isHide ? 0 : '',
           marginBottom: isAggregateEmptyMessage ? '10px' : 0
         }"
-        :title="$t(`m.resource['无限制总文案']`)">
+        :title="$t(`m.resource['无限制总文案']`)"
+      >
         <div class="no-limited-wrapper-left single-hide">
           <Icon type="info-new" />
           <span>{{ $t(`m.resource['无限制文案']`) }}</span>
         </div>
         <div class="no-limited-wrapper-right">
           <bk-checkbox
-            ext-cls="no-limit-checkbox"
+            class="no-limit-checkbox"
             v-model="notLimitValue"
             :disabled="disabled"
-            @change="handleLimitChange">
+            @change="handleLimitChange"
+          >
             {{ $t(`m.common['无限制']`) }}
           </bk-checkbox>
         </div>
       </div>
       <div
         v-if="isAggregateEmptyMessage"
-        class="no-aggregate-wrapper single-hide">
+        class="no-aggregate-wrapper single-hide"
+      >
         <Icon type="info-new" />
         <span>{{ $t(`m.resource['操作之间无公共实例，无法批量编辑']`) }}</span>
       </div>
@@ -45,28 +53,36 @@
               :is-filter="isFilter"
               :custom-class="'iam-topology-input-side'"
               :placeholder="curPlaceholder"
-              @on-search="handleSearch" />
-            <div class="list-wrapper"
+              @on-search="handleSearch"
+            />
+            <div
+              class="list-wrapper"
               v-bkloading="{ isLoading: listLoading, opacity: 1 }"
-              @scroll="handleScroll">
+              @scroll="handleScroll"
+            >
               <template v-if="!listLoading">
                 <p
                   v-for="item in selectList"
                   :key="item.id"
                   :title="item.id"
-                  class="item">
+                  class="item"
+                >
                   <bk-checkbox
                     :true-value="true"
                     :false-value="false"
                     v-model="item.checked"
-                    @change="handleSelected(...arguments, item)">
+                    @change="handleSelected(...arguments, item)"
+                  >
                     {{ item.display_name }}
                   </bk-checkbox>
                 </p>
                 <div v-if="isScrollBottom" class="loading-item">
                   <div v-bkloading="{ isLoading: true, size: 'mini' }"></div>
                 </div>
-                <div class="empty-wrapper" v-if="selectList.length < 1 && !listLoading">
+                <div
+                  class="empty-wrapper"
+                  v-if="selectList.length < 1 && !listLoading"
+                >
                   <ExceptionEmpty
                     :type="emptyData.type"
                     :empty-text="emptyData.text"
@@ -81,15 +97,28 @@
           </div>
           <div class="right-content">
             <div class="right-header">
-              <span :class="['clear-action', { 'disabled': curSelectedList.length < 1 }]" @click.stop="handleClear">{{ $t(`m.common['清空']`) }}</span>
+              <span
+                :class="[
+                  'clear-action',
+                  { disabled: curSelectedList.length < 1 }
+                ]"
+                @click.stop="handleClear"
+              >
+                {{ $t(`m.common['清空']`) }}
+              </span>
             </div>
             <section class="select-list-wrapper">
               <p
                 v-for="item in curSelectedList"
                 :key="item.id"
-                class="selected-item">
-                <span class="name" :title="item.id">{{ item.display_name }}</span>
-                <span class="action" @click.stop="handleRemove(item)">{{ $t(`m.common['移除']`) }}</span>
+                class="selected-item"
+              >
+                <span class="name" :title="item.id">
+                  {{ item.display_name }}
+                </span>
+                <span class="action" @click.stop="handleRemove(item)">
+                  {{ $t(`m.common['移除']`) }}
+                </span>
               </p>
               <div class="empty-wrapper" v-if="curSelectedList.length < 1">
                 <ExceptionEmpty />
@@ -97,25 +126,59 @@
             </section>
           </div>
         </div>
+        <RenderResourceInstance
+          type="property"
+          mode="edit"
+          :selection-mode="selectionMode"
+          :need-order="false"
+          :is-group="true"
+          :disabled="notLimitValue"
+          :sub-title="conditionInstance.attributeTitle"
+          :expanded.sync="conditionInstance.attributeExpanded"
+          :hovering="conditionInstance.isHovering"
+          @on-expand="handleAttrExpanded"
+          @on-mouseover="handleAttrMouseenter"
+          @on-mouseleave="handleAttrMouseLeave"
+        >
+          <Attribute
+            ref="attributeRef"
+            :value="selectedAttrs"
+            :list="attributesList"
+            :limit-value="scopeAttrList"
+            :params="attributeParams"
+            @on-change="handleAttrValueChange"
+          />
+        </RenderResourceInstance>
       </template>
     </div>
-    <div slot="footer" style="margin-left: 25px;">
-      <bk-button theme="primary" @click="handleSave">{{ $t(`m.common['保存']`) }}</bk-button>
-      <bk-button style="margin-left: 10px;" @click="handleCancel">{{ $t(`m.common['取消']`) }}</bk-button>
+    <div slot="footer" class="aggregate-footer">
+      <bk-button theme="primary" @click="handleSave">
+        {{ $t(`m.common['保存']`) }}
+      </bk-button>
+      <bk-button @click="handleCancel">
+        {{ $t(`m.common['取消']`) }}
+      </bk-button>
     </div>
   </bk-sideslider>
 </template>
+
 <script>
-  import _ from 'lodash';
+  import { cloneDeep } from 'lodash';
   import { mapGetters } from 'vuex';
   import { leaveConfirm } from '@/common/leave-confirm';
   import { formatCodeData } from '@/common/util';
+  import { firstAttrData } from '@/views/group/add-perm/test';
+  import Condition from '@/model/condition';
   import TopologyInput from '@/components/choose-ip/topology-input';
+  import Attribute from '@/components/choose-ip/aggregate-attribute';
+  import RenderResourceInstance from '@/components/render-resource';
 
   export default {
     name: '',
     components: {
-      TopologyInput
+      TopologyInput,
+      Attribute,
+      RenderResourceInstance
     },
     props: {
       show: {
@@ -173,10 +236,13 @@
           limit: 23
         },
         selectList: [],
+        attributesList: [],
         curSelectedList: [],
         curSelectedIds: [],
         conditionData: [],
-        requestQueue: [],
+        // 已选中的属性数据
+        selectedAttrs: [],
+        scopeAttrList: [],
         searchValue: '',
         loading: false,
         isFilter: false,
@@ -191,8 +257,11 @@
           tip: '',
           tipType: ''
         },
+        // 实例化类，获取访问器数据title
+        conditionInstance: new Condition({ selection_mode: this.selectionMode }, 'init', 'add'),
         isAny: false,
-        isUnlimited: false
+        isUnlimited: false,
+        pageChangeAlertMemo: false
       };
     },
     computed: {
@@ -202,6 +271,16 @@
           return `${this.$t(`m.common['搜索']`)} ${this.params.name}`;
         }
         return '';
+      },
+      attributeParams () {
+        if (Object.keys(this.params).length > 0) {
+          const { curAggregateSystemId, id } = this.params;
+          return {
+            system_id: curAggregateSystemId,
+            type: id
+          };
+        }
+        return {};
       },
       curTitle () {
         if (this.params.name) {
@@ -213,10 +292,14 @@
         return this.defaultList.length > 0;
       },
       isShowUnlimited () {
-        const result = ['applyCustomPerm'].includes(this.$route.name)
-        || (['super_manager', 'system_manager'].includes(this.user.role.type)
-         && this.noLimitRoutes.includes(this.$route.name));
+        const result
+          = ['applyCustomPerm'].includes(this.$route.name)
+          || (['super_manager', 'system_manager'].includes(this.user.role.type)
+            && this.noLimitRoutes.includes(this.$route.name));
         return result;
+      },
+      isAllSelectionMode () {
+        return this.selectList.length > 0 && this.attributesList.length > 0;
       }
     },
     watch: {
@@ -228,10 +311,15 @@
             window.changeAlert = 'iamSidesider';
             // 为了减少组件之间数据传递的代码量，这里再重新调用一次接口做任意类型数据的处理
             if (this.params.curAggregateSystemId) {
-              await this.fetchAuthorizationScopeActions(this.params.curAggregateSystemId);
+              await this.fetchAuthorizationScopeActions(
+                this.params.curAggregateSystemId
+              );
             }
-            if ((this.isSuperManager && !this.isHasDefaultData) || this.isAny || this.isUnlimited) {
-              this.fetchData(false, true);
+            if ((this.isSuperManager && !this.isHasDefaultData)
+              || this.isAny
+              || this.isUnlimited
+            ) {
+              Promise.all([this.fetchData(false, true), this.fetchResourceAttrs()]);
             } else {
               this.setSelectList(this.defaultList);
             }
@@ -243,7 +331,7 @@
       },
       value: {
         handler (value) {
-          this.curSelectedList = _.cloneDeep(value);
+          this.curSelectedList = cloneDeep(value);
         },
         deep: true
       },
@@ -252,7 +340,7 @@
           if (value.length < 1) {
             this.curSelectedIds = [];
           } else {
-            this.curSelectedIds = value.map(item => item.id);
+            this.curSelectedIds = value.map((item) => item.id);
           }
         },
         immediate: true
@@ -262,6 +350,7 @@
           if (Object.keys(value).length) {
             const { isNoLimited } = value;
             this.notLimitValue = isNoLimited;
+            // isNoLimited代表是否是无限制，无限制则需要
             this.isHide = isNoLimited;
             if (isNoLimited) {
               this.handleClear();
@@ -273,15 +362,12 @@
       },
       notLimitValue (value) {
         if (value) {
-          this.conditionData.forEach(item => {
-            item.isInstanceEmpty = false;
-            item.isAttributeEmpty = false;
+          this.conditionInstance = Object.assign(this.conditionInstance, {
+            isInstanceEmpty: false,
+            isAttributeEmpty: false
           });
         }
       }
-    },
-    created () {
-      this.pageChangeAlertMemo = false;
     },
     methods: {
       async fetchData (isLoading = false, listLoading = false) {
@@ -298,17 +384,24 @@
           type: this.params.id
         };
         try {
-          const { code, data } = await this.$store.dispatch('permApply/getResources', params);
-          this.pagination.totalPage = Math.ceil(data.count / this.pagination.limit);
+          const { code, data } = await this.$store.dispatch(
+            'permApply/getResources',
+            params
+          );
+          this.pagination.totalPage = Math.ceil(
+            data.count / this.pagination.limit
+          );
           this.selectList = data.results || [];
-          this.selectList.forEach(item => {
+          this.selectList.forEach((item) => {
             item.checked = this.curSelectedIds.includes(item.id);
           });
-          this.emptyData = formatCodeData(code, this.emptyData, data.results.length === 0);
+          this.emptyData = formatCodeData(
+            code,
+            this.emptyData,
+            data.results.length === 0
+          );
         } catch (e) {
-          console.error(e);
-          const { code } = e;
-          this.emptyData = formatCodeData(code, this.emptyData);
+          this.emptyData = formatCodeData(e.code, this.emptyData);
           this.resetData();
           this.messageAdvancedError(e);
         } finally {
@@ -317,27 +410,44 @@
         }
       },
 
+      // 获取资源属性
+      async fetchResourceAttrs () {
+        try {
+          // const { data } = await this.$store.dispatch('permApply/getResourceAttrs', this.attributeParams);
+          const { data } = await firstAttrData;
+          this.attributesList = [...data.results || []];
+        } catch (e) {
+          this.messageAdvancedError(e);
+        }
+      },
+
       async fetchAuthorizationScopeActions (id) {
         try {
           const { data } = await this.$store.dispatch(
             'permTemplate/getAuthorizationScopeActions',
-            { systemId: id }
+            {
+              systemId: id
+            }
           );
           // 判断是否是任意
-          this.isAny = data && data.some(item => item.id === '*');
+          this.isAny = data && data.some((item) => item.id === '*');
           if (this.params.actionsId && data.length) {
-            const curActions = data.filter((item) => this.params.actionsId.includes(item.id));
+            const curActions = data.filter((item) =>
+              this.params.actionsId.includes(item.id)
+            );
             if (curActions.length) {
               // 判断操作是否都是无限制
-              this.isUnlimited = curActions.every((item) =>
-                item.resource_groups && item.resource_groups.length
-                && item.resource_groups[0].related_resource_types.length
-                && item.resource_groups[0].related_resource_types[0].condition.length === 0
+              this.isUnlimited = curActions.every(
+                (item) =>
+                  item.resource_groups
+                  && item.resource_groups.length
+                  && item.resource_groups[0].related_resource_types.length
+                  && item.resource_groups[0].related_resource_types[0].condition
+                    .length === 0
               );
             }
           }
         } catch (e) {
-          console.error(e);
           this.messageAdvancedError(e);
         }
       },
@@ -346,7 +456,10 @@
         if (this.isScrollBottom || this.isHasDefaultData) {
           return;
         }
-        if (event.target.scrollTop + event.target.offsetHeight >= event.target.scrollHeight - 5) {
+        if (
+          event.target.scrollTop + event.target.offsetHeight
+          >= event.target.scrollHeight - 5
+        ) {
           window.changeAlert = true;
           ++this.pagination.current;
           if (this.pagination.current <= this.pagination.totalPage) {
@@ -362,14 +475,18 @@
               type: this.params.id
             };
             try {
-              const res = await this.$store.dispatch('permApply/getResources', params);
-              this.pagination.totalPage = Math.ceil(res.data.count / this.pagination.limit)
-              ;(res.data.results || []).forEach(item => {
+              const res = await this.$store.dispatch(
+                'permApply/getResources',
+                params
+              );
+              this.pagination.totalPage = Math.ceil(
+                res.data.count / this.pagination.limit
+              );
+              (res.data.results || []).forEach((item) => {
                 item.checked = this.curSelectedIds.includes(item.id);
               });
-              this.selectList.push(...res.data.results || []);
+              this.selectList.push(...(res.data.results || []));
             } catch (e) {
-              console.error(e);
               this.messageAdvancedError(e);
             } finally {
               this.isScrollBottom = false;
@@ -381,20 +498,19 @@
         }
       },
 
-      handleSearch (payload) {
+      async handleSearch (payload) {
         window.changeAlert = true;
         this.searchValue = payload;
         this.emptyData.tipType = 'search';
-        if (this.isFilter && payload === '') {
-          this.isFilter = false;
-        } else {
-          this.isFilter = true;
-        }
-        this.pagination = Object.assign({}, {
-          current: 1,
-          totalPage: 0,
-          limit: 23
-        });
+        this.isFilter = !(this.isFilter && !payload);
+        this.pagination = Object.assign(
+          {},
+          {
+            current: 1,
+            totalPage: 0,
+            limit: 23
+          }
+        );
         if (this.isHasDefaultData) {
           this.setSearchData();
           return;
@@ -413,48 +529,39 @@
         this.listLoading = true;
         try {
           const res = await setData();
-          this.selectList = _.cloneDeep(res);
-          this.selectList.forEach(item => {
+          this.selectList = cloneDeep(res);
+          this.selectList.forEach((item) => {
             item.checked = this.curSelectedIds.includes(item.id);
           });
         } catch (e) {
-          console.error(e);
           this.messageAdvancedError(e);
         } finally {
           this.listLoading = false;
         }
       },
-      
-      handleLimitChange (newVal, oldVal) {
+
+      handleLimitChange (newVal) {
         window.changeAlert = true;
         this.isHide = newVal;
-        // if (!newVal) {
-        //   const isInitializeData = this.originalData.length === 1 && this.originalData[0] === 'none';
-        //   if (!isInitializeData && this.originalData.length > 0) {
-        //     this.conditionData = _.cloneDeep(this.originalData);
-        //     const firstConditionData = this.conditionData[0];
-        //     if (firstConditionData.instance && firstConditionData.instance.length) {
-        //       firstConditionData.instanceExpanded = true;
-        //     }
-        //     if (firstConditionData.attribute && firstConditionData.attribute.length) {
-        //       firstConditionData.attributeExpanded = true;
-        //     }
-        //     return;
-        //   }
-        //   if (!this.curSelectedList.length) {
-        //     this.curSelectedList.push(new Condition({ selection_mode: this.selectionMode }, 'init', 'add'));
-        //   }
-        // }
-
         if (!this.flag) {
           this.$emit('on-limit-change');
         }
       },
 
+      handleAttrValueChange (payload) {
+        window.changeAlert = true;
+        this.conditionInstance = Object.assign(this.conditionInstance, {
+          isAttributeEmpty: false,
+          attribute: [...payload]
+        });
+      },
+
       setSearchData () {
         let templateList = this.defaultList;
         if (this.searchValue !== '') {
-          templateList = this.defaultList.filter(item => item.display_name.indexOf(this.searchValue) > -1);
+          templateList = this.defaultList.filter(
+            (item) => item.display_name.indexOf(this.searchValue) > -1
+          );
         }
         this.setSelectList(templateList);
       },
@@ -462,14 +569,16 @@
       handleClear () {
         window.changeAlert = true;
         this.curSelectedList = [];
-        this.selectList.forEach(item => {
+        this.selectList.forEach((item) => {
           item.checked = false;
         });
       },
 
       handleRemove ({ id }) {
         window.changeAlert = true;
-        this.curSelectedList = this.curSelectedList.filter(item => item.id !== id);
+        this.curSelectedList = this.curSelectedList.filter(
+          (item) => item.id !== id
+        );
         const len = this.selectList.length;
         for (let i = 0; i < len; i++) {
           if (this.selectList[i].id === id) {
@@ -484,29 +593,87 @@
         if (value) {
           this.curSelectedList.push({ ...payload });
         } else {
-          this.curSelectedList = this.curSelectedList.filter(item => item.id !== payload.id);
+          this.curSelectedList = this.curSelectedList.filter(
+            (item) => item.id !== payload.id
+          );
         }
+      },
+      
+      handleAttrExpanded (payload) {
+        this.conditionInstance.attributeExpanded = !payload;
+      },
+
+      handleAttrMouseenter () {
+        this.conditionInstance.attributeExpanded = true;
+      },
+
+      handleAttrMouseLeave () {
+        this.conditionInstance.attributeExpanded = true;
       },
 
       handleGetValue () {
-        const tempConditionData = _.cloneDeep(this.curSelectedList);
+        const tempConditionData = {
+          instances: this.curSelectedList,
+          attributes: this.conditionInstance.attribute
+        };
         if (this.notLimitValue) {
           return {
             isEmpty: false,
             data: []
           };
         }
-        if (!tempConditionData.length) {
+        if (!tempConditionData.instances.length && !tempConditionData.attributes.length) {
           return {
             isEmpty: false,
             data: ['none']
           };
         }
+        // 属性判断是否都选择了
+        tempConditionData.attributes = tempConditionData.attributes.filter((item) => item.values && item.values.some((v) => v.id !== ''));
+        console.log(tempConditionData, '提交数据');
         return {
           isEmpty: false,
-          data: tempConditionData
+          data: [tempConditionData]
         };
       },
+
+      // handleGetValue () {
+      //   // debugger
+      //   if (this.notLimitValue) {
+      //     return {
+      //       isEmpty: false,
+      //       data: []
+      //     };
+      //   }
+      //   if (this.conditionData.length < 1) {
+      //     return {
+      //       isEmpty: false,
+      //       data: ['none']
+      //     };
+      //   }
+      //   const tempConditionData = _.cloneDeep(this.conditionData);
+      //   if (!tempConditionData.some(item => {
+      //     return (item.instance && (item.instance.length > 0 && item.instance.some(instanceItem => instanceItem.path.length > 0)))
+      //       || (item.attribute && (item.attribute.length > 0 && item.attribute.some(attr => attr.values.some(val => val.id !== ''))));
+      //   })) {
+      //     return {
+      //       isEmpty: false,
+      //       data: ['none']
+      //     };
+      //   }
+      //   tempConditionData.forEach(item => {
+      //     if (item.instance && item.instance.length > 0) {
+      //       item.instance = item.instance.filter(ins => ins.path.length > 0);
+      //     }
+      //     if (item.attribute && item.attribute.length > 0) {
+      //       item.attribute = item.attribute.filter(attr => attr.values.length > 0);
+      //     }
+      //   });
+      //   return {
+      //     isEmpty: false,
+      //     data: tempConditionData
+      //   };
+      // },
 
       handleEmptyClear () {
         this.$refs.topologyInput.value = '';
@@ -521,11 +688,14 @@
       },
 
       resetData () {
-        this.pagination = Object.assign({}, {
-          current: 1,
-          totalPage: 0,
-          limit: 23
-        });
+        this.pagination = Object.assign(
+          {},
+          {
+            current: 1,
+            totalPage: 0,
+            limit: 23
+          }
+        );
         this.searchValue = '';
         this.curSelectedList = [];
         this.selectList = [];
@@ -536,12 +706,17 @@
         window.changeAlert = false;
         if (this.notLimitValue) {
           this.curSelectedList = [];
-          this.selectList.forEach(item => {
+          this.conditionInstance.attributes = [];
+          this.selectList.forEach((item) => {
             item.checked = false;
           });
         }
+        const saveParams = {
+          instances: this.curSelectedList,
+          attributes: this.conditionInstance.attributes
+        };
         this.$emit('update:show', false);
-        this.$emit('on-selected', _.cloneDeep(this.curSelectedList));
+        this.$emit('on-selected', saveParams);
         this.resetData();
       },
 
@@ -550,183 +725,190 @@
         if (window.changeAlert) {
           cancelHandler = leaveConfirm();
         }
-        cancelHandler.then(() => {
-          this.$emit('update:show', false);
-          this.resetData();
-        }, _ => _);
+        cancelHandler.then(
+          () => {
+            this.$emit('update:show', false);
+            this.resetData();
+          },
+          (_) => _
+        );
       }
     }
   };
 </script>
-<style lang="postcss">
-  .iam-aggregate-resource-sideslider-cls {
-    .content {
-        padding: 20px 25px;
-        height: calc(100vh - 114px);
+
+<style lang="postcss" scoped>
+.iam-aggregate-resource-sideslider-cls {
+  .content {
+    padding: 20px 25px;
+    height: calc(100vh - 114px);
+  }
+  .select-wrapper {
+    width: 100%;
+    height: 480px;
+    display: flex;
+    justify-self: start;
+    border-top: 1px solid #dcdee5;
+  }
+  .no-limited-wrapper,
+  /deep/ .no-aggregate-wrapper {
+    width: 100%;
+    height: 42px;
+    line-height: 39px;
+    font-size: 12px;
+    color: #63656e;
+    background-color: #fafbfd;
+    border: 1px solid #dcdee5;
+    padding: 0 21px 0 13px;
+    &-left {
+      max-width: calc(100% - 100px);
     }
-    .select-wrapper {
-        height: 480px;
-        display: flex;
-        justify-self: start;
-        border-top: 1px solid #dcdee5;
+    &-right {
+      .no-limit-checkbox {
+        /deep/ .bk-checkbox-text {
+          font-size: 12px;
+        }
+      }
     }
-    .no-limited-wrapper,
-    .no-aggregate-wrapper {
-      width: 100%;
-      height: 42px;
-      line-height: 39px;
+  }
+  .no-aggregate-wrapper {
+    border-bottom: 0;
+  }
+  .left-content {
+    width: 360px;
+    border-bottom: 1px solid #dcdee5;
+    border-left: 1px solid #dcdee5;
+    .list-wrapper {
+      position: relative;
+      min-height: 446px;
+      padding: 5px 10px;
+      height: calc(100% - 32px);
+      overflow: auto;
+      /*滚动条整体样式*/
+      &::-webkit-scrollbar {
+        width: 6px; /*竖向滚动条的宽度*/
+        height: 6px; /*横向滚动条的高度*/
+      }
+      /*滚动条里面的小方块*/
+      &::-webkit-scrollbar-thumb {
+        background: #dcdee5;
+        border-radius: 3px;
+      }
+      /*滚动条轨道的样式*/
+      &::-webkit-scrollbar-track {
+        background: transparent;
+        border-radius: 3px;
+      }
+      .item {
+        line-height: 24px;
+        /deep/ .bk-checkbox-text {
+          font-size: 12px;
+          max-width: 300px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+      }
+      .loading-item {
+        line-height: 20px;
+      }
+      .empty-wrapper {
+        width: 300px;
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+      }
+    }
+  }
+  .right-content {
+    position: relative;
+    width: 560px;
+    border: 1px solid #dcdee5;
+    border-top: none;
+    .right-header {
+      position: relative;
+      padding: 0 10px;
+      height: 32px;
+      line-height: 32px;
+      font-size: 14px;
+      border-bottom: 1px solid #dcdee5;
+      .clear-action {
+        position: absolute;
+        right: 10px;
+        font-size: 12px;
+        color: #3a84ff;
+        cursor: pointer;
+        &:hover {
+          color: #699df4;
+        }
+        &.disabled {
+          color: #c4c6cc;
+          cursor: not-allowed;
+        }
+      }
+    }
+    .select-list-wrapper {
+      height: calc(100% - 32px);
+      overflow: auto;
+      /*滚动条整体样式*/
+      &::-webkit-scrollbar {
+        width: 6px; /*竖向滚动条的宽度*/
+        height: 6px; /*横向滚动条的高度*/
+      }
+      /*滚动条里面的小方块*/
+      &::-webkit-scrollbar-thumb {
+        background: #dcdee5;
+        border-radius: 3px;
+      }
+      /*滚动条轨道的样式*/
+      &::-webkit-scrollbar-track {
+        background: transparent;
+        border-radius: 3px;
+      }
+    }
+    .selected-item {
+      padding: 0 10px;
+      display: flex;
+      justify-content: space-between;
+      line-height: 32px;
       font-size: 12px;
-      color: #63656e;
-      background-color: #fafbfd;
-      border: 1px solid #dcdee5;
-      padding: 0 21px 0 13px;
-      &-left {
-        max-width: calc(100% - 100px);
+      border-bottom: 1px solid #dcdee5;
+      .name {
+        /* max-width: 400px; */
+        max-width: 470px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
-      &-right {
-        .no-limit-checkbox {
-          .bk-checkbox-text {
-            font-size: 12px;
-          }
+      .action {
+        color: #3a84ff;
+        cursor: pointer;
+        &:hover {
+          color: #699df4;
         }
       }
     }
-    .no-aggregate-wrapper {
-      border-bottom: 0;
+    .empty-wrapper {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      img {
+        width: 120px;
+      }
     }
-    .left-content {
-        width: 360px;
-        /* border-top: 1px solid #dcdee5; */
-        border-bottom: 1px solid #dcdee5;
-        border-left: 1px solid #dcdee5;
-        .list-wrapper {
-            position: relative;
-            min-height: 446px;
-            padding: 5px 10px;
-            height: calc(100% - 32px);
-            overflow: auto;
-            /*滚动条整体样式*/
-            &::-webkit-scrollbar {
-                width: 6px; /*竖向滚动条的宽度*/
-                height: 6px; /*横向滚动条的高度*/
-            }
-            /*滚动条里面的小方块*/
-            &::-webkit-scrollbar-thumb {
-                background: #dcdee5;
-                border-radius: 3px;
-            }
-            /*滚动条轨道的样式*/
-            &::-webkit-scrollbar-track {
-                background: transparent;
-                border-radius: 3px;
-            }
-            .item {
-                line-height: 24px;
-                .bk-checkbox-text {
-                    font-size: 12px;
-                    /* max-width: 165px; */
-                    max-width: 300px;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    white-space: nowrap;
-                }
-            }
-            .loading-item {
-                line-height: 20px;
-            }
-            .empty-wrapper {
-                width: 300px;
-                position: absolute;
-                left: 50%;
-                top: 50%;
-                transform: translate(-50%, -50%);
-                /* img {
-                    width: 120px;
-                } */
-            }
-        }
-    }
-    .right-content {
-        position: relative;
-        width: 560px;
-        border: 1px solid #dcdee5;
-        border-top: none;
-        .right-header {
-            position: relative;
-            padding: 0 10px;
-            height: 32px;
-            line-height: 32px;
-            font-size: 14px;
-            border-bottom: 1px solid #dcdee5;
-            .clear-action {
-                position: absolute;
-                right: 10px;
-                font-size: 12px;
-                color: #3a84ff;
-                cursor: pointer;
-                &:hover {
-                    color: #699df4;
-                }
-                &.disabled {
-                    color: #c4c6cc;
-                    cursor: not-allowed;
-                }
-            }
-        }
-        .select-list-wrapper {
-            height: calc(100% - 32px);
-            overflow: auto;
-            /*滚动条整体样式*/
-            &::-webkit-scrollbar {
-                width: 6px; /*竖向滚动条的宽度*/
-                height: 6px; /*横向滚动条的高度*/
-            }
-            /*滚动条里面的小方块*/
-            &::-webkit-scrollbar-thumb {
-                background: #dcdee5;
-                border-radius: 3px;
-            }
-            /*滚动条轨道的样式*/
-            &::-webkit-scrollbar-track {
-                background: transparent;
-                border-radius: 3px;
-            }
-        }
-        .selected-item {
-            padding: 0 10px;
-            display: flex;
-            justify-content: space-between;
-            line-height: 32px;
-            font-size: 12px;
-            border-bottom: 1px solid #dcdee5;
-            .name {
-                /* max-width: 400px; */
-                max-width: 470px;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                white-space: nowrap;
-            }
-            .action {
-                color: #3a84ff;
-                cursor: pointer;
-                &:hover {
-                    color: #699df4;
-                }
-            }
-        }
-        .empty-wrapper {
-            position: absolute;
-            left: 50%;
-            top: 50%;
-            transform: translate(-50%, -50%);
-            img {
-                width: 120px;
-            }
-        }
-    }
-    .bk-sideslider-footer {
-        background-color: #ffffff !important;
-        border-color: #dcdee5!important;
+  }
+}
+  /deep/ .bk-sideslider-footer {
+    background-color: #ffffff !important;
+    border-color: #dcdee5 !important;
+    .aggregate-footer {
+      margin-left: 25px;
+      line-height: 48px;
+      .bk-button {
+        margin-right: 8px;
+      }
     }
   }
 </style>

@@ -32,8 +32,10 @@ export default class GroupAggregationPolicy {
     this.isError = payload.isError || false;
     this.actions = payload.actions || [];
     this.instancesDisplayData = payload.instancesDisplayData || {};
+    this.attributesDisplayData = payload.attributesDisplayData || {};
     this.aggregateResourceType = payload.aggregate_resource_types || payload.aggregateResourceType || [];
     this.instances = payload.instances || [];
+    this.attributes = payload.attributes || [];
     this.instancesBackup = _.cloneDeep(this.instances);
     this.isAggregate = true;
     this.system_id = payload.actions[0].detail.system.id;
@@ -65,13 +67,14 @@ export default class GroupAggregationPolicy {
   }
 
   get empty () {
+    const isEmpty = this.attributes.length < 1 && this.instances.length < 1;
     if (this.isNeedNoLimited) {
-      if (this.instances.length === 1 && this.instances[0] === 'none') {
+      if (isEmpty || ((this.instances.length === 1 && this.instances[0] === 'none') && this.attributes.length < 1)) {
         return true;
       }
       return false;
     } else {
-      return this.instances.length < 1;
+      return isEmpty;
     }
   }
 
@@ -79,12 +82,13 @@ export default class GroupAggregationPolicy {
     if (this.empty) {
       return il8n('verify', '请选择');
     }
-    if ((this.isNoLimited || (!this.instances.length && !['add'].includes(this.tag)))) {
+    if ((this.isNoLimited || (!this.empty && !['add'].includes(this.tag)))) {
       return il8n('common', '无限制');
     }
     let str = '';
     this.aggregateResourceType.length && this.aggregateResourceType.forEach(item => {
       if (this.instancesDisplayData[item.id]) {
+        console.log(this.instancesDisplayData[item.id]);
         if (this.instancesDisplayData[item.id].length > 1) {
           for (const key in this.instancesDisplayData) {
             if (item.id === key) {
@@ -124,6 +128,4 @@ export default class GroupAggregationPolicy {
     }
     return this.actions.map(item => item.id).join('');
   }
-
-  // get resource_groups
 }

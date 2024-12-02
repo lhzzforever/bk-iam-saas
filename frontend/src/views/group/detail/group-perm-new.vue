@@ -186,7 +186,6 @@
       },
       mode: {
         handler (value) {
-          console.log('value', value);
           this.handleIframeSend({ tab: 'group_perm' }, 'change_group_detail_tab');
         },
         immediate: true

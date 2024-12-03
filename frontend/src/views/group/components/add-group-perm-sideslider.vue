@@ -12,7 +12,7 @@
           <render-search>
             <div class="search-title">
               {{ $t(`m.info['从权限模板选择添加：']`) }}{{ $t(`m.common['已选择']`) }}
-              <span style="color: #2dcb56;">{{ currentSelectList.length }}</span>
+              <span style="color: #3a84ff;">{{ currentSelectList.length }}</span>
               {{ $t(`m.common['条']`) }}
             </div>
             <div slot="right">

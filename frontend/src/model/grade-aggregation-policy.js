@@ -25,16 +25,18 @@
 */
 
 import Vue from 'vue';
-import _ from 'lodash';
+import { cloneDeep } from 'lodash';
 import { il8n, language } from '@/language';
 export default class GradeAggregationPolicy {
   constructor (payload) {
     this.isError = payload.isError || false;
     this.actions = payload.actions || [];
     this.instancesDisplayData = payload.instancesDisplayData || {};
+    this.attributesDisplayData = payload.attributesDisplayData || {};
     this.aggregateResourceType = payload.aggregate_resource_types || payload.aggregateResourceType || [];
     this.instances = payload.instances || [];
-    this.instancesBackup = _.cloneDeep(this.instances);
+    this.attributes = payload.attributes || [];
+    this.instancesBackup = cloneDeep(this.instances);
     this.isAggregate = true;
     this.system_id = payload.actions[0].system_id;
     this.system_name = payload.system_name;
@@ -44,39 +46,56 @@ export default class GradeAggregationPolicy {
   }
 
   get empty () {
-    return this.instances.length < 1;
+    const isEmpty = this.attributes.length < 1 && this.instances.length < 1;
+    return isEmpty;
   }
 
   get value () {
     if (this.empty) {
       return il8n('verify', '请选择');
     }
-    let str = '';
+    let instanceStr = '';
+    let attributeStr = '';
     this.aggregateResourceType.length && this.aggregateResourceType.forEach(item => {
-      if (this.instancesDisplayData[item.id]) {
-        if (this.instancesDisplayData[item.id].length > 1) {
+      if (!this.instancesDisplayData[item.id]) {
+        instanceStr = '';
+        this.instancesDisplayData[item.id] = [];
+      }
+      if (!this.attributesDisplayData[item.id]) {
+        attributeStr = '';
+        this.attributesDisplayData[item.id] = [];
+      }
+      const instanceData = this.instancesDisplayData[item.id];
+      const attributeData = this.attributesDisplayData[item.id];
+      // 格式化聚合实例显示内容
+      if (instanceData) {
+        if (instanceData.length > 1) {
           for (const key in this.instancesDisplayData) {
             if (item.id === key) {
-              str = language === 'zh-cn' ? `${str}，已选择${this.instancesDisplayData[item.id].length}个${item.name}` : `${str}, selected ${this.instancesDisplayData[item.id].length} ${item.name}(s)`;
-              Vue.set(item, 'displayValue', str.substring(1, str.length));
-              str = '';
+              instanceStr = language === 'zh-cn' ? `${instanceStr}，已选择${instanceData.length}个${item.name}` : `${instanceStr}, selected ${instanceData.length} ${item.name}(s)`;
             }
           }
         } else {
           // 这里防止切换tab下存在空数据，需要重新判断下
-          if (this.instancesDisplayData[item.id] && this.instancesDisplayData[item.id].length === 1) {
-            str = `${str}${il8n('common', '，')}${item.name}${il8n('common', '：')}${this.instancesDisplayData[item.id][0].name}`;
+          if (instanceData && instanceData.length === 1) {
+            instanceStr = `${instanceStr}${il8n('common', '，')}${item.name}${il8n('common', '：')}${instanceData[0].name}`;
           }
-          Vue.set(item, 'displayValue', str.substring(1, str.length));
-          str = '';
         }
-      } else {
-        this.instancesDisplayData[item.id] = [];
-        Vue.set(item, 'displayValue', '');
-        str = '';
       }
+      // 格式化聚合属性条件显示内容
+      if (attributeData) {
+        Object.keys(this.attributesDisplayData).forEach((key) => {
+          if (item.id === key && attributeData.length > 0) {
+            attributeStr = `${il8n('resource', '已设置')} ${attributeData.length} ${il8n('resource', '个属性条件')}`;
+          }
+        });
+      }
+      const displayValue = [attributeStr, instanceStr.substring(1, instanceStr.length)].filter(v => v !== '').join('；');
+      Vue.set(item, 'displayValue', displayValue);
+      instanceStr = '';
+      attributeStr = '';
     });
-    const aggregateResourceType = _.cloneDeep(this.aggregateResourceType.map(item => item.displayValue));
+    const aggregateResourceType = cloneDeep(this.aggregateResourceType.map(v => v.displayValue));
     return aggregateResourceType.join();
   }
 

@@ -774,7 +774,7 @@
       },
 
       // 设置正常粘贴InstancesDisplayData
-      setNomalInstancesDisplayData (data, key) {
+      setNormalInstancesDisplayData (data, key) {
         data.instancesDisplayData[key] = data.instances.map(e => ({
           id: e.id,
           name: e.name
@@ -1325,7 +1325,7 @@
                   if (`${aggregateResourceItem.system_id}${aggregateResourceItem.id}` === this.curCopyKey) {
                     item.instances = _.cloneDeep(tempArrgegateData);
                     this.instanceKey = aggregateResourceItem.id;
-                    this.setNomalInstancesDisplayData(item, this.instanceKey);
+                    this.setNormalInstancesDisplayData(item, this.instanceKey);
                     this.instanceKey = ''; // 重置
                     item.isError = false;
                   }

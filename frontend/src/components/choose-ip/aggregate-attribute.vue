@@ -85,17 +85,6 @@
   import Attribute from '@/model/attribute';
   import BkUserSelector from '@blueking/user-selector';
 
-  const ATTRIBUTE_ITEM = {
-    id: '',
-    name: '',
-    values: []
-  };
-
-  const LOADING_ITEM = {
-    id: '',
-    display_name: ''
-  };
-    
   export default {
     components: {
       BkUserSelector
@@ -134,6 +123,15 @@
           limit: 10,
           current: 1,
           totalPage: 0
+        },
+        ATTRIBUTE_ITEM: {
+          id: '',
+          name: '',
+          values: []
+        },
+        LOADING_ITEM: {
+          id: '',
+          display_name: ''
         },
         attrValueListMap: {},
         isDisabledMode: false,
@@ -174,7 +172,7 @@
       value: {
         handler (val) {
           if (val.length < 1) {
-            this.attrValues = [new Attribute(ATTRIBUTE_ITEM)];
+            this.attrValues = [new Attribute(this.ATTRIBUTE_ITEM)];
             return;
           }
           this.attrValues = val;
@@ -287,16 +285,17 @@
       async fetchAttributeValue (item) {
         item.loading = true;
         try {
-          const { data } = await this.$store.dispatch('permApply/getResourceAttrValues', {
+          const { current, limit } = this.pagination;
+          const { data } = await secondAttrData || await this.$store.dispatch('permApply/getResourceAttrValues', {
             ...this.params,
-            limit: this.pagination.limit,
-            offset: this.pagination.limit * (this.pagination.current - 1),
+            limit,
+            offset: limit * (current - 1),
             attribute: item.id,
             keyword: ''
           });
-          this.pagination.totalPage = Math.ceil(data.count / this.pagination.limit);
+          this.pagination.totalPage = Math.ceil(data.count / limit);
           if (this.pagination.totalPage > 1) {
-            data.results.push(LOADING_ITEM);
+            data.results.push(this.LOADING_ITEM);
           }
           const results = (() => {
             const limitItem = this.limitValue.find(v => v.id === item.id);
@@ -314,7 +313,7 @@
       },
 
       handleAddAttribute () {
-        this.attrValues.push(new Attribute(ATTRIBUTE_ITEM));
+        this.attrValues.push(new Attribute(this.ATTRIBUTE_ITEM));
         this.trigger();
       },
 
@@ -402,7 +401,7 @@
           } else {
             this.pagination.totalPage = Math.ceil(res.data.count / this.pagination.limit);
             if (this.pagination.totalPage > 1) {
-              res.data.results.push(LOADING_ITEM);
+              res.data.results.push(this.LOADING_ITEM);
             } else {
               res.data.results = res.data.results.filter((item) => item.id !== '');
             }

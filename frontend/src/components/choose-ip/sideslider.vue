@@ -133,16 +133,16 @@
           :need-order="false"
           :is-group="true"
           :disabled="notLimitValue"
-          :sub-title="conditionInstance.attributeTitle"
-          :expanded.sync="conditionInstance.attributeExpanded"
-          :hovering="conditionInstance.isHovering"
+          :sub-title="conditionData.attributeTitle"
+          :expanded.sync="conditionData.attributeExpanded"
+          :hovering="conditionData.isHovering"
           @on-expand="handleAttrExpanded"
           @on-mouseover="handleAttrMouseenter"
           @on-mouseleave="handleAttrMouseLeave"
         >
           <Attribute
             ref="attributeRef"
-            :value="selectedAttrs"
+            :value="conditionData.attribute"
             :list="attributesList"
             :limit-value="scopeAttrList"
             :params="attributeParams"
@@ -186,6 +186,10 @@
         default: false
       },
       value: {
+        type: Array,
+        default: () => []
+      },
+      attrValue: {
         type: Array,
         default: () => []
       },
@@ -239,9 +243,6 @@
         attributesList: [],
         curSelectedList: [],
         curSelectedIds: [],
-        conditionData: [],
-        // 已选中的属性数据
-        selectedAttrs: [],
         scopeAttrList: [],
         searchValue: '',
         loading: false,
@@ -257,8 +258,8 @@
           tip: '',
           tipType: ''
         },
-        // 实例化类，获取访问器数据title
-        conditionInstance: new Condition({ selection_mode: this.selectionMode }, 'init', 'add'),
+        // 实例化类获取实例成员
+        conditionData: new Condition({ selection_mode: this.selectionMode }, 'init', 'add'),
         isAny: false,
         isUnlimited: false,
         pageChangeAlertMemo: false
@@ -335,13 +336,18 @@
         },
         deep: true
       },
+      attrValue: {
+        handler (value) {
+          this.conditionData.attribute = cloneDeep(value);
+          if (value.length) {
+            this.conditionData.attributeExpanded = true;
+          }
+        },
+        deep: true
+      },
       curSelectedList: {
         handler (value) {
-          if (value.length < 1) {
-            this.curSelectedIds = [];
-          } else {
-            this.curSelectedIds = value.map((item) => item.id);
-          }
+          this.curSelectedIds = value.map((item) => item.id);
         },
         immediate: true
       },
@@ -349,9 +355,8 @@
         handler (value) {
           if (Object.keys(value).length) {
             const { isNoLimited } = value;
-            this.notLimitValue = isNoLimited;
             // isNoLimited代表是否是无限制，无限制则需要
-            this.isHide = isNoLimited;
+            [this.notLimitValue, this.isHide] = [isNoLimited, isNoLimited];
             if (isNoLimited) {
               this.handleClear();
             }
@@ -362,7 +367,7 @@
       },
       notLimitValue (value) {
         if (value) {
-          this.conditionInstance = Object.assign(this.conditionInstance, {
+          this.conditionData = Object.assign(this.conditionData, {
             isInstanceEmpty: false,
             isAttributeEmpty: false
           });
@@ -550,7 +555,7 @@
 
       handleAttrValueChange (payload) {
         window.changeAlert = true;
-        this.conditionInstance = Object.assign(this.conditionInstance, {
+        this.conditionData = Object.assign(this.conditionData, {
           isAttributeEmpty: false,
           attribute: [...payload]
         });
@@ -600,21 +605,21 @@
       },
       
       handleAttrExpanded (payload) {
-        this.conditionInstance.attributeExpanded = !payload;
+        this.conditionData.attributeExpanded = !payload;
       },
 
       handleAttrMouseenter () {
-        this.conditionInstance.attributeExpanded = true;
+        this.conditionData.isHovering = true;
       },
 
       handleAttrMouseLeave () {
-        this.conditionInstance.attributeExpanded = true;
+        this.conditionData.isHovering = false;
       },
 
       handleGetValue () {
         const tempConditionData = {
           instances: this.curSelectedList,
-          attributes: this.conditionInstance.attribute
+          attributes: this.conditionData.attribute
         };
         if (this.notLimitValue) {
           return {
@@ -630,50 +635,11 @@
         }
         // 属性判断是否都选择了
         tempConditionData.attributes = tempConditionData.attributes.filter((item) => item.values && item.values.some((v) => v.id !== ''));
-        console.log(tempConditionData, '提交数据');
         return {
           isEmpty: false,
           data: [tempConditionData]
         };
       },
-
-      // handleGetValue () {
-      //   // debugger
-      //   if (this.notLimitValue) {
-      //     return {
-      //       isEmpty: false,
-      //       data: []
-      //     };
-      //   }
-      //   if (this.conditionData.length < 1) {
-      //     return {
-      //       isEmpty: false,
-      //       data: ['none']
-      //     };
-      //   }
-      //   const tempConditionData = _.cloneDeep(this.conditionData);
-      //   if (!tempConditionData.some(item => {
-      //     return (item.instance && (item.instance.length > 0 && item.instance.some(instanceItem => instanceItem.path.length > 0)))
-      //       || (item.attribute && (item.attribute.length > 0 && item.attribute.some(attr => attr.values.some(val => val.id !== ''))));
-      //   })) {
-      //     return {
-      //       isEmpty: false,
-      //       data: ['none']
-      //     };
-      //   }
-      //   tempConditionData.forEach(item => {
-      //     if (item.instance && item.instance.length > 0) {
-      //       item.instance = item.instance.filter(ins => ins.path.length > 0);
-      //     }
-      //     if (item.attribute && item.attribute.length > 0) {
-      //       item.attribute = item.attribute.filter(attr => attr.values.length > 0);
-      //     }
-      //   });
-      //   return {
-      //     isEmpty: false,
-      //     data: tempConditionData
-      //   };
-      // },
 
       handleEmptyClear () {
         this.$refs.topologyInput.value = '';
@@ -699,6 +665,8 @@
         this.searchValue = '';
         this.curSelectedList = [];
         this.selectList = [];
+        this.attributesList = [];
+        this.conditionData.attribute = [];
         this.isScrollBottom = false;
       },
 
@@ -706,14 +674,14 @@
         window.changeAlert = false;
         if (this.notLimitValue) {
           this.curSelectedList = [];
-          this.conditionInstance.attributes = [];
+          this.conditionData.attribute = [];
           this.selectList.forEach((item) => {
             item.checked = false;
           });
         }
         const saveParams = {
           instances: this.curSelectedList,
-          attributes: this.conditionInstance.attributes
+          attributes: this.conditionData.attribute || []
         };
         this.$emit('update:show', false);
         this.$emit('on-selected', saveParams);

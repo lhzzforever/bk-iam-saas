@@ -177,10 +177,13 @@
       @on-after-leave="handlerPreviewDialogClose" />
 
     <render-aggregate-sideslider
+      ref="aggregateRef"
       :show.sync="isShowAggregateSideslider"
       :params="aggregateResourceParams"
       :value="aggregateValue"
-      @on-selected="handlerSelectAggregateRes" />
+      :attr-value="aggregateAttrValue"
+      @on-selected="handlerSelectAggregateRes"
+    />
   </div>
 </template>
 
@@ -255,12 +258,11 @@
         previewResourceParams: {},
         curCopyData: ['none'],
         curCopyKey: '',
-
         isShowAggregateSideslider: false,
-
         aggregateResourceParams: {},
         aggregateIndex: -1,
         aggregateValue: [],
+        aggregateAttrValue: [],
         // 当前复制的数据形态: normal: 普通; aggregate: 聚合后
         curCopyMode: 'normal',
         curAggregateResourceType: {},
@@ -372,6 +374,7 @@
             this.aggregateResourceParams = {};
             this.aggregateIndex = -1;
             this.aggregateValue = [];
+            this.aggregateAttrValue = [];
             this.curCopyMode = 'normal';
             this.curAggregateResourceType = {};
             this.curCopyParams = {};
@@ -529,36 +532,91 @@
             display_name: item.name
           };
         }));
+        this.aggregateAttrValue = _.cloneDeep(data.attributesDisplayData[instanceKey] || []);
         this.isShowAggregateSideslider = true;
       },
 
-      handlerSelectAggregateRes (payload) {
-        window.changeDialog = true;
-        const instances = payload.map(item => {
+      handlerSelectAggregateRes ({ instances, attributes }) {
+        const conditionData = this.$refs.aggregateRef.handleGetValue();
+        const { isEmpty, data } = conditionData;
+        if (isEmpty) {
+          return;
+        }
+        const isConditionEmpty = data.length === 1 && data[0] === 'none';
+        const curInstances = instances.map(item => {
           return {
             id: item.id,
             name: item.display_name
           };
         });
-        this.tableList[this.aggregateIndex].isError = false;
-        this.selectedIndex = this.tableList[this.aggregateIndex].selectedIndex;
-        const instanceKey = this.tableList[this.aggregateIndex].aggregateResourceType[this.selectedIndex].id;
-        const instancesDisplayData = _.cloneDeep(this.tableList[this.aggregateIndex].instancesDisplayData);
-        this.tableList[this.aggregateIndex].instancesDisplayData = {
-                    ...instancesDisplayData,
-                    [instanceKey]: instances
-        };
-        this.tableList[this.aggregateIndex].instances = [];
-
-        for (const key in this.tableList[this.aggregateIndex].instancesDisplayData) {
-          // eslint-disable-next-line max-len
-          this.tableList[this.aggregateIndex].instances.push(...this.tableList[this.aggregateIndex].instancesDisplayData[key]);
+        const curAttributes = attributes.map(item => {
+          return {
+            id: item.id,
+            name: item.name,
+            values: item.values,
+            selecteds: item.selecteds
+          };
+        });
+        let curAggregateItem = this.tableList[this.aggregateIndex];
+        const { selectedIndex, aggregateResourceType, instancesDisplayData, attributesDisplayData } = curAggregateItem;
+        this.selectedIndex = selectedIndex;
+        // 获取操作聚合后当前资源类型
+        const resourceTypeKey = aggregateResourceType[selectedIndex].id;
+        curAggregateItem = Object.assign(curAggregateItem, {
+          isError: false,
+          instances: [],
+          attributes: [],
+          // 获取操作聚合后当前资源类型实例视图数据
+          instancesDisplayData: {
+            ...instancesDisplayData,
+            [resourceTypeKey]: curInstances
+          },
+          // 获取操作聚合后当前资源类型属性视图数据
+          attributesDisplayData: {
+            ...attributesDisplayData,
+            [resourceTypeKey]: curAttributes
+          }
+        });
+        Object.keys(curAggregateItem.instancesDisplayData).forEach((key) => {
+          curAggregateItem.instances.push(...curAggregateItem.instancesDisplayData[key]);
+        });
+        Object.keys(curAggregateItem.attributesDisplayData).forEach((key) => {
+          curAggregateItem.attributes.push(...curAggregateItem.attributesDisplayData[key]);
+        });
+        if (isConditionEmpty) {
+          curAggregateItem = Object.assign(curAggregateItem, {
+            instances: ['none'],
+            attributes: [],
+            isLimitExceeded: false,
+            isError: true
+          });
+        } else {
+          // 筛选实例数据
+          const curAggregateInstance = data.map((item) => {
+            if (item.instances && item.instances.length > 0) {
+              return item.instances;
+            }
+            return [];
+          });
+          // 筛选属性数据
+          const curAggregateAttrs = data.map((item) => {
+            if (item.attributes && item.attributes.length > 0) {
+              return item.attributes;
+            }
+            return [];
+          });
+          curAggregateItem = Object.assign(curAggregateItem, {
+            instances: curAggregateInstance.flat(Infinity),
+            attributes: curAggregateAttrs.flat(Infinity),
+            isError: instances.length < 1 && attributes.length < 1
+          });
         }
         this.$set(
           this.tableList,
           this.aggregateIndex,
-          new GradeAggregationPolicy(this.tableList[this.aggregateIndex])
+          new GradeAggregationPolicy(curAggregateItem)
         );
+        console.log(this.tableList[this.aggregateIndex], '聚合数据');
         this.$emit('on-select', this.tableList[this.aggregateIndex]);
       },
 

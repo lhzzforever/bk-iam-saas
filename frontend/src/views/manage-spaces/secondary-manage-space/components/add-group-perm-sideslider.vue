@@ -108,22 +108,24 @@
               {{ actionCount }}
               {{ $t(`m.common['个']`) }}
               {{ $t(`m.common['操作']`) }}
-              <bk-button style="margin-left: 5px;" text theme="primary" @click="hadleEditCustomPerm" data-test-id="group_btn_editCustomPerm">
+              <bk-button style="margin-left: 5px;" text theme="primary" @click="handleEditCustomPerm" data-test-id="group_btn_editCustomPerm">
                 {{ $t(`m.common['编辑']`) }}
               </bk-button>
             </p>
           </template>
           <template v-else>
             {{ $t(`m.info['没有在模板中找到']`) }}{{ $t(`m.common['，']`) }}{{ $t(`m.common['也可']`) }}
-            <bk-button style="margin-left: 5px;" text theme="primary" @click="hadleAddCustomPerm" data-test-id="group_btn_addCustomPerm">
+            <bk-button style="margin-left: 5px;" text theme="primary" @click="handleAddCustomPerm" data-test-id="group_btn_addCustomPerm">
               {{ $t(`m.info['添加自定义权限']`) }}
             </bk-button>
           </template>
         </div>
       </section>
     </div>
-    <div slot="footer" style="padding-left: 22px;">
-      <bk-button theme="primary" :disabled="isDisabled" @click="handleSubmit" data-test-id="group_btn_addGroupConfirm">{{ $t(`m.common['确定']`) }}</bk-button>
+    <div slot="footer" class="add-group-perm-footer">
+      <bk-button theme="primary" :disabled="isDisabled" @click="handleSubmit">
+        {{ $t(`m.common['确定']`) }}
+      </bk-button>
       <bk-button @click="handleCancel">{{ $t(`m.common['取消']`) }}</bk-button>
     </div>
   </bk-sideslider>
@@ -395,12 +397,12 @@
         this.$emit('on-submit', this.tempalteDetailList, this.aggregationData, this.authorizationScope);
       },
 
-      hadleAddCustomPerm () {
+      handleAddCustomPerm () {
         window.changeAlert = true;
         this.$emit('on-add-custom');
       },
 
-      hadleEditCustomPerm () {
+      handleEditCustomPerm () {
         window.changeAlert = true;
         this.$emit('on-edit-custom');
       },
@@ -564,82 +566,6 @@
   };
 </script>
 
-<style lang="postcss">
-    .iam-add-group-perm-sideslider {
-        z-index: 2503;
-        .content-wrapper {
-            position: relative;
-            padding: 13px 22px;
-            height: calc(100vh - 61px)
-        }
-        .template-content-wrapper {
-            border-bottom: 1px solid #dcdee5;
-        }
-        .search-title {
-            line-height: 32px;
-            font-size: 14px;
-        }
-        .perm-template-table {
-            margin-top: 8px;
-            border: none;
-            .perm-template-name {
-                color: #3a84ff;
-                cursor: pointer;
-                &:hover {
-                    color: #699df4;
-                }
-            }
-            .bk-table-header-wrapper {
-                .bk-table-column-selection {
-                    .cell {
-                        visibility: hidden !important;
-                    }
-                }
-            }
-        }
-        .custom-perm-wrapper {
-            line-height: 42px;
-            font-size: 14px;
-            .title {
-                color: #313238;
-            }
-            .title,
-            .selected-info {
-                line-height: 1;
-            }
-        }
-        .add-button {
-            display: inline-block;
-            vertical-align: top;
-            line-height: 30px;
-            button {
-                padding: 0;
-                .left-icon {
-                    top: -1px;
-                    margin-right: 0;
-                }
-            }
-        }
-        .refresh-wrapper {
-            width: 32px;
-            height: 32px;
-            display: inline-block;
-            vertical-align: top;
-            line-height: 28px;
-            border: 1px solid #c4c6cc;
-            text-align: center;
-            cursor: pointer;
-            &:hover {
-                border-color: #3a84ff;
-                color: #3a84ff;
-            }
-        }
-        .error-icon {
-            font-size: 14px;
-            color: #ffb400;
-            position: absolute;
-            left: -15px;
-            top: -11px;
-        }
-    }
+<style lang="postcss" scoped>
+@import '@/css/mixins/add-group-perm-slider.css';
 </style>

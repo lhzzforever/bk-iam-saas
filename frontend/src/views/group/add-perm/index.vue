@@ -344,6 +344,7 @@
           const actions = this.curMap.get(item.aggregationId) || [];
           const len = actions.length;
           if (len > 0) {
+            this.isShowErrorTips = false;
             for (let i = 0; i < len; i++) {
               if (actions[i].id === item.id) {
                 // eslint-disable-next-line max-len
@@ -363,6 +364,7 @@
       handleAttrValueSelected (payload) {
         console.log('payload', payload);
         window.changeDialog = true;
+        this.isShowErrorTips = false;
         const instances = (function () {
           const arr = [];
           payload.aggregateResourceType.forEach(resourceItem => {

@@ -55,6 +55,7 @@
               :key="option.id"
               :id="option.id"
               :name="option.display_name"
+              :disabled="isAttrDisabled(option, item.id, index)"
             >
               <template v-if="!!option.id">
                 <span>{{ option.display_name }}</span>
@@ -151,6 +152,14 @@
       isMemberSelector () {
         return (payload) => {
           return ['bk_cmdb'].includes(this.params.system_id) && ['operator', 'bk_bak_operator'].includes(payload.id);
+        };
+      },
+      isAttrDisabled () {
+        return (row, resourceId, resourceIndex) => {
+          const isDisabled = this.attrValues.some((item, index) =>
+            item.selecteds && item.selecteds.includes(row.id) && item.id === resourceId && resourceIndex !== index
+          );
+          return isDisabled;
         };
       },
       formatDisabled () {

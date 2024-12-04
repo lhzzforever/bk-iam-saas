@@ -430,8 +430,8 @@
             curSelectActions.push(`${item.system_id}&${item.id}`);
           }
         });
-        let aggregations = []
-        ;(payload || []).forEach(item => {
+        let aggregations = [];
+        (payload || []).forEach(item => {
           const { actions, aggregate_resource_types, $id } = item;
           const curActions = actions.filter(_ => curSelectActions.includes(`${_.system_id}&${_.id}`));
           if (curActions.length > 0) {

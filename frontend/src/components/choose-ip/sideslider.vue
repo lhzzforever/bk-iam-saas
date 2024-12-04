@@ -126,29 +126,30 @@
             </section>
           </div>
         </div>
-        <RenderResourceInstance
-          type="property"
-          mode="edit"
-          :selection-mode="selectionMode"
-          :need-order="false"
-          :is-group="true"
-          :disabled="notLimitValue"
-          :sub-title="conditionData.attributeTitle"
-          :expanded.sync="conditionData.attributeExpanded"
-          :hovering="conditionData.isHovering"
-          @on-expand="handleAttrExpanded"
-          @on-mouseover="handleAttrMouseenter"
-          @on-mouseleave="handleAttrMouseLeave"
-        >
-          <Attribute
-            ref="attributeRef"
-            :value="conditionData.attribute"
-            :list="attributesList"
-            :limit-value="scopeAttrList"
-            :params="attributeParams"
-            @on-change="handleAttrValueChange"
-          />
-        </RenderResourceInstance>
+        <template v-if="!!attributesList.length">
+          <RenderResourceInstance
+            type="property"
+            mode="edit"
+            :selection-mode="selectionMode"
+            :need-order="false"
+            :is-group="true"
+            :disabled="notLimitValue"
+            :sub-title="conditionData.attributeTitle"
+            :expanded.sync="conditionData.attributeExpanded"
+            :hovering="conditionData.isHovering"
+            @on-expand="handleAttrExpanded"
+            @on-mouseover="handleAttrMouseenter"
+            @on-mouseleave="handleAttrMouseLeave"
+          >
+            <Attribute
+              :value="conditionData.attribute"
+              :list="attributesList"
+              :limit-value="scopeAttrList"
+              :params="attributeParams"
+              @on-change="handleAttrValueChange"
+            />
+          </RenderResourceInstance>
+        </template>
       </template>
     </div>
     <div slot="footer" class="aggregate-footer">
@@ -683,6 +684,14 @@
           instances: this.curSelectedList,
           attributes: this.conditionData.attribute || []
         };
+        if (saveParams.attributes.length) {
+          // 查询有属性条件存在时是否数据完全
+          const attrEmptyIndex = saveParams.attributes.findIndex((item) => item.values.length === 0);
+          if (attrEmptyIndex > -1) {
+            this.messageWarn(this.$t(`m.info['第几项属性不能为空']`, { value: attrEmptyIndex + 1 }), 3000);
+            return;
+          }
+        }
         this.$emit('update:show', false);
         this.$emit('on-selected', saveParams);
         this.resetData();

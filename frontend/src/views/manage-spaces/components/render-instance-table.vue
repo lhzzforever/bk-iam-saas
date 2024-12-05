@@ -180,10 +180,13 @@
       @on-after-leave="handlerPreviewDialogClose" />
 
     <render-aggregate-side-slider
+      ref="aggregateRef"
       :show.sync="isShowAggregateSideSlider"
       :params="aggregateResourceParams"
       :value="aggregateValue"
-      @on-selected="handlerSelectAggregateRes" />
+      :attr-value="aggregateAttrValue"
+      @on-selected="handlerSelectAggregateRes"
+    />
   </div>
 </template>
 
@@ -265,11 +268,13 @@
         previewDialogTitle: '',
         previewResourceParams: {},
         curCopyData: ['none'],
+        curCopyAttrData: [],
         curCopyKey: '',
         isShowAggregateSideSlider: false,
         aggregateResourceParams: {},
         aggregateIndex: -1,
         aggregateValue: [],
+        aggregateAttrValue: [],
         // 当前复制的数据形态: normal: 普通; aggregate: 聚合后
         curCopyMode: 'normal',
         curAggregateResourceType: {},
@@ -375,12 +380,14 @@
           if (value !== '') {
             this.curCopyKey = '';
             this.curCopyData = ['none'];
+            this.curCopyAttrData = [];
             this.curIndex = -1;
             this.curResIndex = -1;
             this.curGroupIndex = -1;
             this.aggregateResourceParams = {};
             this.aggregateIndex = -1;
             this.aggregateValue = [];
+            this.aggregateAttrValue = [];
             this.curCopyMode = 'normal';
             this.curAggregateResourceType = {};
             this.curCopyParams = {};
@@ -531,41 +538,95 @@
         const instanceKey = data.aggregateResourceType[data.selectedIndex].id;
         this.instanceKey = instanceKey;
         if (!data.instancesDisplayData[instanceKey]) data.instancesDisplayData[instanceKey] = [];
+        if (!data.attributesDisplayData[instanceKey]) data.attributesDisplayData[instanceKey] = [];
         this.aggregateValue = _.cloneDeep(data.instancesDisplayData[instanceKey].map(item => {
           return {
             id: item.id,
             display_name: item.name
           };
         }));
+        this.aggregateAttrValue = _.cloneDeep(data.attributesDisplayData[instanceKey] || []);
         this.isShowAggregateSideSlider = true;
       },
 
-      handlerSelectAggregateRes (payload) {
-        window.changeDialog = true;
-        const instances = payload.map(item => {
+      handlerSelectAggregateRes ({ instances, attributes }) {
+        const conditionData = this.$refs.aggregateRef.handleGetValue();
+        const { isEmpty, data } = conditionData;
+        if (isEmpty) {
+          return;
+        }
+        const isConditionEmpty = data.length === 1 && data[0] === 'none';
+        const curInstances = instances.map(item => {
           return {
             id: item.id,
             name: item.display_name
           };
         });
-        this.tableList[this.aggregateIndex].isError = false;
-        this.selectedIndex = this.tableList[this.aggregateIndex].selectedIndex;
-        const instanceKey = this.tableList[this.aggregateIndex].aggregateResourceType[this.selectedIndex].id;
-        const instancesDisplayData = _.cloneDeep(this.tableList[this.aggregateIndex].instancesDisplayData);
-        this.tableList[this.aggregateIndex].instancesDisplayData = {
-                    ...instancesDisplayData,
-                    [instanceKey]: instances
-        };
-        this.tableList[this.aggregateIndex].instances = [];
-
-        for (const key in this.tableList[this.aggregateIndex].instancesDisplayData) {
-          // eslint-disable-next-line max-len
-          this.tableList[this.aggregateIndex].instances.push(...this.tableList[this.aggregateIndex].instancesDisplayData[key]);
+        const curAttributes = attributes.map(item => {
+          return {
+            id: item.id,
+            name: item.name,
+            values: item.values,
+            selecteds: item.selecteds
+          };
+        });
+        let curAggregateItem = this.tableList[this.aggregateIndex];
+        const { selectedIndex, aggregateResourceType, instancesDisplayData, attributesDisplayData } = curAggregateItem;
+        this.selectedIndex = selectedIndex;
+        // 获取操作聚合后当前资源类型
+        const resourceTypeKey = aggregateResourceType[selectedIndex].id;
+        curAggregateItem = Object.assign(curAggregateItem, {
+          isError: false,
+          instances: [],
+          attributes: [],
+          // 获取操作聚合后当前资源类型实例视图数据
+          instancesDisplayData: {
+            ...instancesDisplayData,
+            [resourceTypeKey]: curInstances
+          },
+          // 获取操作聚合后当前资源类型属性视图数据
+          attributesDisplayData: {
+            ...attributesDisplayData,
+            [resourceTypeKey]: curAttributes
+          }
+        });
+        Object.keys(curAggregateItem.instancesDisplayData).forEach((key) => {
+          curAggregateItem.instances.push(...curAggregateItem.instancesDisplayData[key]);
+        });
+        Object.keys(curAggregateItem.attributesDisplayData).forEach((key) => {
+          curAggregateItem.attributes.push(...curAggregateItem.attributesDisplayData[key]);
+        });
+        if (isConditionEmpty) {
+          curAggregateItem = Object.assign(curAggregateItem, {
+            instances: ['none'],
+            attributes: [],
+            isError: true
+          });
+        } else {
+          // 筛选实例数据
+          const curAggregateInstance = data.map((item) => {
+            if (item.instances && item.instances.length > 0) {
+              return item.instances;
+            }
+            return [];
+          });
+          // 筛选属性数据
+          const curAggregateAttrs = data.map((item) => {
+            if (item.attributes && item.attributes.length > 0) {
+              return item.attributes;
+            }
+            return [];
+          });
+          curAggregateItem = Object.assign(curAggregateItem, {
+            instances: curAggregateInstance.flat(Infinity),
+            attributes: curAggregateAttrs.flat(Infinity),
+            isError: instances.length < 1 && attributes.length < 1
+          });
         }
         this.$set(
           this.tableList,
           this.aggregateIndex,
-          new GradeAggregationPolicy(this.tableList[this.aggregateIndex])
+          new GradeAggregationPolicy(curAggregateItem)
         );
         this.$emit('on-select', this.tableList[this.aggregateIndex]);
       },
@@ -807,12 +868,13 @@
       },
 
       handlerAggregateOnCopy (payload, index) {
-        this.instanceKey = payload.aggregateResourceType[payload.selectedIndex].id;
-        this.curCopyKey = `${payload.aggregateResourceType[payload.selectedIndex].system_id}${payload.aggregateResourceType[payload.selectedIndex].id}`;
-        this.curAggregateResourceType = payload.aggregateResourceType[payload.selectedIndex];
-        this.curCopyData = _.cloneDeep(payload.instancesDisplayData[this.instanceKey]);
-        this.curCopyDataId = payload.$id;
         this.curCopyMode = 'aggregate';
+        this.curCopyDataId = payload.$id;
+        this.curAggregateResourceType = payload.aggregateResourceType[payload.selectedIndex];
+        this.instanceKey = this.curAggregateResourceType.id;
+        this.curCopyKey = `${this.curAggregateResourceType.system_id}${this.curAggregateResourceType.id}`;
+        this.curCopyData = _.cloneDeep(payload.instancesDisplayData[this.instanceKey]);
+        this.curCopyAttrData = _.cloneDeep(payload.attributesDisplayData[this.instanceKey]);
         this.showMessage(this.$t(`m.info['实例复制']`));
         this.$refs[`condition_${index}_aggregateRef`] && this.$refs[`condition_${index}_aggregateRef`].setImmediatelyShow(true);
       },
@@ -897,7 +959,8 @@
 
       handlerAggregateOnBatchPaste (payload, index) {
         let tempCurData = ['none'];
-        let tempArrgegateData = [];
+        let tempArrAggregateData = [];
+        let tempAttrAggregateData = [];
         if (this.curCopyMode === 'normal') {
           if (this.curCopyData[0] !== 'none') {
             tempCurData = this.curCopyData.map(item => {
@@ -906,7 +969,7 @@
             });
             const instances = this.curCopyData.map(item => item.instance);
             const instanceData = instances[0][0];
-            tempArrgegateData = instanceData.path.map(pathItem => {
+            tempArrAggregateData = instanceData.path.map(pathItem => {
               return {
                 id: pathItem[0].id,
                 name: pathItem[0].name
@@ -914,7 +977,8 @@
             });
           }
         } else {
-          tempArrgegateData = this.curCopyData;
+          tempArrAggregateData = this.curCopyData;
+          tempAttrAggregateData = this.curCopyAttrData;
           const instances = (() => {
             const arr = [];
             const { id, name, system_id } = this.curAggregateResourceType;
@@ -944,8 +1008,27 @@
             });
             return arr;
           })();
-          if (instances.length > 0) {
-            tempCurData = [new Condition({ instances }, '', 'add')];
+          const attributes = (() => {
+            const arr = [];
+            const { id } = this.curAggregateResourceType;
+            this.curCopyAttrData.forEach(v => {
+              const curItem = arr.find(_ => _.type === id);
+              if (curItem) {
+                arr.push(v);
+              } else {
+                arr.push({
+                  ...v,
+                  ...{
+                    type: id
+                  }
+                });
+              }
+            });
+            return arr;
+          })();
+          const isExistData = instances.length > 0 || attributes.length > 0;
+          if (isExistData) {
+            tempCurData = [new Condition({ instances, attributes }, '', 'add')];
           }
         }
         this.tableList.forEach(item => {
@@ -963,12 +1046,17 @@
             item.aggregateResourceType.forEach(aggregateResourceItem => {
               if (`${aggregateResourceItem.system_id}${aggregateResourceItem.id}` === this.curCopyKey && this.curCopyDataId !== item.$id) {
                 if (Object.keys(item.instancesDisplayData).length) {
-                  item.instancesDisplayData[this.instanceKey] = _.cloneDeep(tempArrgegateData);
+                  item.instancesDisplayData[this.instanceKey] = _.cloneDeep(tempArrAggregateData);
                   item.instances = this.setInstanceData(item.instancesDisplayData);
                 } else {
-                  item.instances = _.cloneDeep(tempArrgegateData);
+                  item.instances = _.cloneDeep(tempArrAggregateData);
                   this.setInstancesDisplayData(item);
                 }
+                // 处理聚合属性
+                if (Object.keys(item.attributesDisplayData).length) {
+                  item.attributesDisplayData[this.instanceKey] = _.cloneDeep(tempAttrAggregateData);
+                }
+                item.attributes = _.cloneDeep(tempAttrAggregateData);
               }
             });
             item.isError = false;
@@ -1014,7 +1102,7 @@
       handlerOnBatchPaste (payload, content, index, subIndex) {
         window.changeDialog = true;
         let tempCurData = ['none'];
-        let tempArrgegateData = [];
+        let tempArrAggregateData = [];
         if (this.curCopyMode === 'normal') {
           if (!payload.flag) {
             return;
@@ -1048,7 +1136,7 @@
                 });
                 const instances = this.curCopyData.map(item => item.instance);
                 const instanceData = instances[0][0];
-                tempArrgegateData = instanceData.path.map(pathItem => {
+                tempArrAggregateData = instanceData.path.map(pathItem => {
                   return {
                     id: pathItem[0].id,
                     name: pathItem[0].name
@@ -1070,7 +1158,7 @@
                 });
               } else {
                 if (`${item.aggregateResourceType[item.selectedIndex].system_id}${item.aggregateResourceType[item.selectedIndex].id}` === this.curCopyKey) {
-                  item.instances = _.cloneDeep(tempArrgegateData);
+                  item.instances = _.cloneDeep(tempArrAggregateData);
                   item.isError = false;
                   this.$emit('on-select', item);
                 }
@@ -1094,7 +1182,7 @@
                 // if (`${item.aggregateResourceType[item.selectedIndex].system_id}${item.aggregateResourceType[item.selectedIndex].id}` === this.curCopyKey) {
                 item.aggregateResourceType.forEach(aggregateResourceItem => {
                   if (`${aggregateResourceItem.system_id}${aggregateResourceItem.id}` === this.curCopyKey) {
-                    item.instances = _.cloneDeep(tempArrgegateData);
+                    item.instances = _.cloneDeep(tempArrAggregateData);
                     this.instanceKey = aggregateResourceItem.id;
                     this.setNomalInstancesDisplayData(item, this.instanceKey);
                     this.instanceKey = ''; // 重置
@@ -1107,7 +1195,7 @@
             });
           }
         } else {
-          tempArrgegateData = this.curCopyData;
+          tempArrAggregateData = this.curCopyData;
           const instances = (() => {
             const arr = [];
             const { id, name, system_id } = this.curAggregateResourceType;
@@ -1152,7 +1240,7 @@
               });
             } else {
               if (`${item.aggregateResourceType.system_id}${item.aggregateResourceType.id}` === this.curCopyKey) {
-                item.instances = _.cloneDeep(tempArrgegateData);
+                item.instances = _.cloneDeep(tempArrAggregateData);
                 item.isError = false;
               }
             }

@@ -397,6 +397,7 @@
         previewDialogTitle: '',
         previewResourceParams: {},
         curCopyData: ['none'],
+        curCopyAttrData: [],
         curCopyType: '',
         curId: '',
         curInstanceMode: '',
@@ -405,6 +406,7 @@
         aggregateResourceParams: {},
         aggregateIndex: -1,
         aggregateValue: [],
+        aggregateAttrValue: [],
         // 当前复制的数据形态: normal: 普通; aggregate: 聚合后
         curCopyMode: 'normal',
         curAggregateResourceType: {},
@@ -594,12 +596,14 @@
           if (value !== '') {
             this.curCopyType = '';
             this.curCopyData = ['none'];
+            this.curCopyAttrData = [];
             this.curIndex = -1;
             this.curResIndex = -1;
             this.curGroupIndex = -1;
             this.aggregateResourceParams = {};
             this.aggregateIndex = -1;
             this.aggregateValue = [];
+            this.aggregateAttrValue = [];
             this.curCopyMode = 'normal';
             this.curCopyParams = {};
             this.curAggregateResourceType = {};
@@ -682,43 +686,84 @@
         delete payload.customValueBackup;
       },
 
-      async handlerSelectAggregateRes (payload) {
-        const instances = payload.map(item => {
-          return {
-            id: item.id,
-            name: item.display_name
-          };
-        });
-        const curAggregateItem = this.tableList[this.aggregateIndex];
-        curAggregateItem.isError = false;
-        this.selectedIndex = curAggregateItem.selectedIndex;
-        const instanceKey = curAggregateItem.aggregateResourceType[this.selectedIndex].id;
-        const instancesDisplayData = curAggregateItem.instancesDisplayData;
-        curAggregateItem.instancesDisplayData = {
-          ...instancesDisplayData,
-          [instanceKey]: instances
-        };
-        curAggregateItem.instances = [];
-        for (const key in curAggregateItem.instancesDisplayData) {
-          curAggregateItem.instances.push(...curAggregateItem.instancesDisplayData[key]);
-        }
+      handlerSelectAggregateRes ({ instances, attributes }) {
         const conditionData = this.$refs.aggregateRef.handleGetValue();
         const { isEmpty, data } = conditionData;
         if (isEmpty) {
           return;
         }
         const isConditionEmpty = data.length === 1 && data[0] === 'none';
+        const curInstances = instances.map(item => {
+          return {
+            id: item.id,
+            name: item.display_name
+          };
+        });
+        const curAttributes = attributes.map(item => {
+          return {
+            id: item.id,
+            name: item.name,
+            values: item.values,
+            selecteds: item.selecteds
+          };
+        });
+        let curAggregateItem = this.tableList[this.aggregateIndex];
+        const { selectedIndex, aggregateResourceType, instancesDisplayData, attributesDisplayData } = curAggregateItem;
+        this.selectedIndex = selectedIndex;
+        // 获取操作聚合后当前资源类型
+        const resourceTypeKey = aggregateResourceType[selectedIndex].id;
+        curAggregateItem = Object.assign(curAggregateItem, {
+          isError: false,
+          instances: [],
+          attributes: [],
+          // 获取操作聚合后当前资源类型实例视图数据
+          instancesDisplayData: {
+            ...instancesDisplayData,
+            [resourceTypeKey]: curInstances
+          },
+          // 获取操作聚合后当前资源类型属性视图数据
+          attributesDisplayData: {
+            ...attributesDisplayData,
+            [resourceTypeKey]: curAttributes
+          }
+        });
+        Object.keys(curAggregateItem.instancesDisplayData).forEach((key) => {
+          curAggregateItem.instances.push(...curAggregateItem.instancesDisplayData[key]);
+        });
+        Object.keys(curAggregateItem.attributesDisplayData).forEach((key) => {
+          curAggregateItem.attributes.push(...curAggregateItem.attributesDisplayData[key]);
+        });
         if (isConditionEmpty) {
-          curAggregateItem.instances = ['none'];
-          curAggregateItem.isLimitExceeded = false;
-          curAggregateItem.isError = true;
-          curAggregateItem.isNoLimited = false;
+          curAggregateItem = Object.assign(curAggregateItem, {
+            instances: ['none'],
+            attributes: [],
+            isLimitExceeded: false,
+            isError: true,
+            isNoLimited: false
+          });
         } else {
-          // data和isEmpty都为false代表是无限制
+          // data为空数组且isEmpty为false代表是无限制
           const isNoLimited = !isEmpty && !data.length;
-          curAggregateItem.instances = data;
-          curAggregateItem.isError = !(isNoLimited || data.length);
-          curAggregateItem.isNoLimited = isNoLimited;
+          // 筛选实例数据
+          const curAggregateInstance = data.map((item) => {
+            if (item.instances && item.instances.length > 0) {
+              return item.instances;
+            }
+            return [];
+          });
+          // 筛选属性数据
+          const curAggregateAttrs = data.map((item) => {
+            if (item.attributes && item.attributes.length > 0) {
+              return item.attributes;
+            }
+            return [];
+          });
+          curAggregateItem = Object.assign(curAggregateItem, {
+            instances: curAggregateInstance.flat(Infinity),
+            attributes: curAggregateAttrs.flat(Infinity),
+            isError: !(isNoLimited || data.length),
+            isNoLimited
+          });
         }
         this.$set(
           this.tableList,
@@ -914,12 +959,14 @@
         const instanceKey = data.aggregateResourceType[data.selectedIndex].id;
         this.instanceKey = instanceKey;
         if (!data.instancesDisplayData[instanceKey]) data.instancesDisplayData[instanceKey] = [];
+        if (!data.attributesDisplayData[instanceKey]) data.attributesDisplayData[instanceKey] = [];
         this.aggregateValue = _.cloneDeep(data.instancesDisplayData[instanceKey].map(item => {
           return {
             id: item.id,
             display_name: item.name
           };
         }));
+        this.aggregateAttrValue = _.cloneDeep(data.attributesDisplayData[instanceKey]);
         this.isShowAggregateSideslider = true;
       },
 

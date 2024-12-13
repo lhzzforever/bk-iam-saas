@@ -171,9 +171,9 @@
         <ExceptionEmpty />
       </div>
     </div>
-    <div slot="footer" style="padding-left: 30px;">
+    <div slot="footer" class="add-action-slider-footer">
       <bk-button theme="primary" @click="handleSubmit">{{ $t(`m.common['确定']`) }}</bk-button>
-      <bk-button style="margin-left: 10px;" @click="handleCancel('cancel')">{{ $t(`m.common['取消']`) }}</bk-button>
+      <bk-button @click="handleCancel('cancel')">{{ $t(`m.common['取消']`) }}</bk-button>
     </div>
   </bk-sideslider>
 </template>
@@ -182,9 +182,10 @@
   import _ from 'lodash';
   import { leaveConfirm } from '@/common/leave-confirm';
   import { guid, formatCodeData, existValue } from '@/common/util';
-  import RenderActionTag from '@/components/common-action';
   import { mapGetters } from 'vuex';
   import { bus } from '@/common/bus';
+  import { testAuthScopeInstanceAttr } from '@/views/group/detail/test';
+  import RenderActionTag from '@/components/common-action';
 
   export default {
     name: '',
@@ -453,9 +454,9 @@
                 }
               }
             }
-          })
+          });
 
-          ;(item.sub_groups || []).forEach(sub => {
+          (item.sub_groups || []).forEach(sub => {
             sub.actions.forEach(act => {
               if (payload.related_actions.includes(act.id) && flag) {
                 if (!act.checked) {
@@ -611,7 +612,8 @@
           return;
         }
         try {
-          const { code, data } = await this.$store.dispatch('permTemplate/getAuthorizationScopeActions', { systemId: this.curSystem });
+          const { code, data } = await this.$store.dispatch('permTemplate/getAuthorizationScopeActions', { systemId: this.curSystem }) || await testAuthScopeInstanceAttr;
+          // const { code, data } = await testAuthScopeInstanceAttr;
           this.$set(this.authorizationData, this.curSystem, data.filter(item => item.id !== '*'));
           this.emptyData = formatCodeData(code, this.emptyData, data.length === 0);
         } catch (e) {
@@ -977,7 +979,6 @@
       },
 
       fetchErrorMsg (payload) {
-        console.error(payload);
         const { code } = payload;
         this.emptyData = formatCodeData(code, this.emptyData);
         this.messageAdvancedError(payload);

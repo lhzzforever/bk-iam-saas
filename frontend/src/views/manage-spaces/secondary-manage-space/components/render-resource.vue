@@ -523,7 +523,14 @@
       getAuthorizationScopeAction () {
         if (Object.keys(this.curScopeAction).length > 0) {
           console.log('this.curScopeAction.resource_groups', this.curScopeAction.resource_groups, this.resIndex);
-          const curData = new RelateResourceTypes(this.curScopeAction.resource_groups[0].related_resource_types[this.resIndex], { name: this.curScopeAction.name, type: this.curScopeAction.type }, 'detail');
+          const curData = new RelateResourceTypes(
+            this.curScopeAction.resource_groups[0].related_resource_types[this.resIndex],
+            {
+              name: this.curScopeAction.name,
+              type: this.curScopeAction.type
+            },
+            'detail'
+          );
           const len = curData.condition.length;
           // debugger
           if (len > 0) {
@@ -541,7 +548,10 @@
                 const chainLen = subItem.resource_type_chain.length;
                 const curChainId = subItem.resource_type_chain.map(item => item.id);
                 const lastChainId = subItem.resource_type_chain[chainLen - 1].id;
-                const curTypes = isHasInstance ? item.instance.map(v => v.path.map(vItem => vItem.map(_ => _.type))) : [];
+                let curTypes = [];
+                if (isHasInstance) {
+                  curTypes = item.instance.map(v => v.path.map(vItem => vItem.map(_ => _.type)));
+                }
                 return curTypes.filter(typeItem => {
                   if (subItem.ignore_iam_path && typeItem.length === 1) {
                     return typeItem[0] === lastChainId;
@@ -577,52 +587,6 @@
             });
           }
         }
-        // try {
-        //     const res = await this.$store.dispatch('permTemplate/getAuthorizationScopeActions', { systemId: this.params.system_id })
-        //     const curAction = res.data.find(item => item.id === this.params.action_id)
-        //     if (curAction && curAction.related_resource_types && curAction.related_resource_types.length > 0) {
-        //         const curData = new RelateResourceTypes(curAction.related_resource_types[this.resIndex], { name: curAction.name, type: curAction.type }, 'detail')
-        //         const len = curData.condition.length
-        //         if (len > 0) {
-        //             this.conditionLimitData = curData.condition
-        //             if (this.conditionData.length < len) {
-        //                 const differenceLen = len - this.conditionData.length
-        //                 for (let i = 0; i < differenceLen; i++) {
-        //                     this.conditionData.push(new Condition({ selection_mode: this.selectionMode }, 'init', 'add'))
-        //                 }
-        //             }
-        //             this.conditionLimitData.forEach((item, index) => {
-        //                 const tempList = this.selectList.filter(subItem => {
-        //                     return item.instance.map(v => v.path[0][0].type).includes(subItem.resource_type_chain[0].id)
-        //                 })
-        //                 this.$set(this.selectListMap, index, tempList)
-        //                 this.$set(this.selectValueMap, index, tempList[0].id)
-        //                 const isHasInstance = item.instance && item.instance.length > 0
-        //                 const isHasAttribute = item.attribute && item.attribute.length > 0
-        //                 let curSelectMode = ''
-        //                 if (!isHasInstance && isHasAttribute) {
-        //                     curSelectMode = 'attribute'
-        //                     this.$delete(this.conditionData[index], 'instance')
-        //                 } else if (isHasInstance && !isHasAttribute) {
-        //                     curSelectMode = 'instance'
-        //                     this.$delete(this.conditionData[index], 'attribute')
-        //                 } else {
-        //                     curSelectMode = 'all'
-        //                 }
-        //                 this.$set(this.selectionModeMap, index, curSelectMode)
-        //             })
-        //         }
-        //     }
-        // } catch (e) {
-        //     console.error(e)
-        //     this.bkMessageInstance = this.$bkMessage({
-        //         limit: 1,
-        //         theme: 'error',
-        //         message: e.message || e.data.msg || e.statusText
-        //     })
-        // } finally {
-        //     this.requestQueue.shift()
-        // }
       },
 
       async fetchResourceAttrs () {

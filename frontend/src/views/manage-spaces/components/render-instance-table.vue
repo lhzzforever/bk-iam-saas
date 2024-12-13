@@ -62,13 +62,17 @@
                 {{ row.aggregateResourceType[0].name }}
               </label>
               <div class="bk-button-group tab-button" v-else>
-                <bk-button v-for="(item, index) in row.aggregateResourceType"
-                  :key="item.id" @click="selectResourceType(row, index)"
-                  :class="row.selectedIndex === index ? 'is-selected' : ''"
-                  size="small">{{item.name}}
-                  <span v-if="!row.isNoLimited && row.instancesDisplayData[item.id]
-                    && row.instancesDisplayData[item.id].length">
-                    ({{row.instancesDisplayData[item.id].length}})</span>
+                <bk-button
+                  size="small"
+                  v-for="(item, index) in row.aggregateResourceType"
+                  :key="item.id"
+                  :class="[{ 'is-selected': row.selectedIndex === index }]"
+                  @click="selectResourceType(row, index)"
+                >
+                  {{item.name}}
+                  <template v-if="!row.isNoLimited && formatDisplayResourceTotal(row, item.id) > 0">
+                    <span>({{ formatDisplayResourceTotal(row, item.id) }})</span>
+                  </template>
                 </bk-button>
               </div>
               <render-condition
@@ -295,69 +299,85 @@
       };
     },
     computed: {
-        ...mapGetters(['user']),
-        condition () {
-            if (this.curIndex === -1 || this.curResIndex === -1 || this.curGroupIndex === -1) {
-                return [];
-            }
-            const curData = this.tableList[this.curIndex].resource_groups[this.curGroupIndex]
-                .related_resource_types[this.curResIndex];
-            if (!curData) {
-                return [];
-            }
-            return _.cloneDeep(curData.condition);
-        },
-        originalCondition () {
-            if (this.curIndex === -1
-                || this.curResIndex === -1
-                || this.curGroupIndex === -1
-                || this.originalList.length < 1
-                || !this.originalList[this.curIndex]
-                || this.originalList[this.curIndex].resource_groups[this.curGroupIndex]
-                    .related_resource_types.length < 1) {
-                return [];
-            }
-            const curData = this.originalList[this.curIndex].resource_groups[this.curGroupIndex]
-                .related_resource_types[this.curResIndex];
-            return _.cloneDeep(curData.condition);
-        },
-        curDisabled () {
-            if (this.curIndex === -1 || this.curResIndex === -1 || this.curGroupIndex === -1) {
-                return false;
-            }
-            const curData = this.tableList[this.curIndex].resource_groups[this.curGroupIndex]
-                .related_resource_types[this.curResIndex];
-            return curData.isDefaultLimit;
-        },
-        curFlag () {
-            if (this.curIndex === -1 || this.curResIndex === -1 || this.curGroupIndex === -1) {
-                return 'add';
-            }
-            const curData = this.tableList[this.curIndex].resource_groups[this.curGroupIndex]
-                .related_resource_types[this.curResIndex];
-            return curData.flag;
-        },
-        curSelectionMode () {
-            if (this.curIndex === -1 || this.curResIndex === -1 || this.curGroupIndex === -1) {
-                return 'all';
-            }
-            const curData = this.tableList[this.curIndex].resource_groups[this.curGroupIndex]
-                .related_resource_types[this.curResIndex];
-            return curData.selectionMode;
-        },
-        // 处理无限制和聚合后多个tab数据结构不兼容情况
-        formatDisplayValue () {
-          return (payload) => {
-            const { isNoLimited, empty, value, aggregateResourceType, selectedIndex } = payload;
-            if (value && aggregateResourceType[selectedIndex]) {
-              let displayValue = aggregateResourceType[selectedIndex].displayValue;
-              if (isNoLimited || empty) {
-                displayValue = value;
-              }
-              return displayValue;
-            }
-          };
+      ...mapGetters(['user']),
+      condition () {
+        if (this.curIndex === -1 || this.curResIndex === -1 || this.curGroupIndex === -1) {
+          return [];
         }
+        const curData = this.tableList[this.curIndex].resource_groups[this.curGroupIndex]
+            .related_resource_types[this.curResIndex];
+        if (!curData) {
+          return [];
+        }
+        return _.cloneDeep(curData.condition);
+      },
+      originalCondition () {
+        if (this.curIndex === -1
+          || this.curResIndex === -1
+          || this.curGroupIndex === -1
+          || this.originalList.length < 1
+          || !this.originalList[this.curIndex]
+          || this.originalList[this.curIndex].resource_groups[this.curGroupIndex]
+          .related_resource_types.length < 1
+        ) {
+          return [];
+        }
+        const curData = this.originalList[this.curIndex].resource_groups[this.curGroupIndex]
+            .related_resource_types[this.curResIndex];
+        return _.cloneDeep(curData.condition);
+      },
+      curDisabled () {
+        if (this.curIndex === -1 || this.curResIndex === -1 || this.curGroupIndex === -1) {
+            return false;
+        }
+        const curData = this.tableList[this.curIndex].resource_groups[this.curGroupIndex]
+          .related_resource_types[this.curResIndex];
+        return curData.isDefaultLimit;
+      },
+      curFlag () {
+        if (this.curIndex === -1 || this.curResIndex === -1 || this.curGroupIndex === -1) {
+          return 'add';
+        }
+        const curData = this.tableList[this.curIndex].resource_groups[this.curGroupIndex]
+          .related_resource_types[this.curResIndex];
+        return curData.flag;
+      },
+      curSelectionMode () {
+        if (this.curIndex === -1 || this.curResIndex === -1 || this.curGroupIndex === -1) {
+          return 'all';
+        }
+        const curData = this.tableList[this.curIndex].resource_groups[this.curGroupIndex]
+            .related_resource_types[this.curResIndex];
+        return curData.selectionMode;
+      },
+      // 处理无限制和聚合后多个tab数据结构不兼容情况
+      formatDisplayValue () {
+        return (payload) => {
+          const { isNoLimited, empty, value, aggregateResourceType, selectedIndex } = payload;
+          if (value && aggregateResourceType[selectedIndex]) {
+            let displayValue = aggregateResourceType[selectedIndex].displayValue;
+            if (isNoLimited || empty) {
+              displayValue = value;
+            }
+            return displayValue;
+          }
+        };
+      },
+      formatDisplayResourceTotal () {
+        return (payload, resourceId) => {
+          let result = 0;
+          const { attributesDisplayData, instancesDisplayData } = payload;
+          const hasInstance = instancesDisplayData[resourceId] && instancesDisplayData[resourceId].length > 0;
+          const hasAttribute = attributesDisplayData[resourceId] && attributesDisplayData[resourceId].length > 0;
+          if (hasInstance) {
+            result += instancesDisplayData[resourceId].length;
+          }
+          if (hasAttribute) {
+            result += attributesDisplayData[resourceId].length;
+          }
+          return result;
+        };
+      }
     },
     watch: {
       list: {
@@ -397,7 +417,6 @@
       }
     },
     created () {
-      console.log('1.我的管理空间-最大可授权资源范围');
       // 判断数组是否被另外一个数组包含
       this.isArrayInclude = (target, origin) => {
         const itemAry = [];
@@ -830,12 +849,12 @@
         this.curCopyKey = `${payload.system_id}${payload.type}`;
         this.curCopyData = _.cloneDeep(payload.condition);
         this.curCopyMode = 'normal';
-        this.curCopyParams = this.getBacthCopyParms(action, payload);
+        this.curCopyParams = this.getBatchCopyParams(action, payload);
         this.showMessage(this.$t(`m.info['实例复制']`));
         this.$refs[`condition_${index}_${subIndex}_ref`][0] && this.$refs[`condition_${index}_${subIndex}_ref`][0].setImmediatelyShow(true);
       },
 
-      getBacthCopyParms (payload, content) {
+      getBatchCopyParams (payload, content) {
         const actions = [];
         this.tableList.forEach(item => {
           if (!item.isAggregate) {
@@ -881,10 +900,14 @@
 
       handlerAggregateOnPaste (payload) {
         let tempInstances = [];
+        let tempAttributes = [];
         if (this.curCopyMode === 'aggregate') {
           tempInstances = this.curCopyData;
+          tempAttributes = this.curCopyAttrData;
         } else {
-          if (this.curCopyData[0] !== 'none') {
+          const hasInstance = this.curCopyData.length > 0 && this.curCopyData[0] !== 'none';
+          const hasAttribute = this.curCopyAttrData.length > 0;
+          if (hasInstance) {
             const instances = this.curCopyData.map(item => item.instance);
             const instanceData = instances[0][0];
             tempInstances = instanceData.path.map(pathItem => {
@@ -894,12 +917,35 @@
               };
             });
           }
+          if (hasAttribute) {
+            const { id } = this.curAggregateResourceType;
+            this.curCopyAttrData.forEach(v => {
+              const curItem = tempAttributes.find(_ => _.type === id);
+              if (curItem) {
+                tempAttributes.push(v);
+              } else {
+                tempAttributes.push({
+                  ...v,
+                  ...{
+                    type: id
+                  }
+                });
+              }
+            });
+          }
         }
-        if (tempInstances.length < 1) {
+        const isEmpty = !tempInstances.length && !tempAttributes.length;
+        if (isEmpty) {
           return;
         }
-        payload.instances = _.cloneDeep(tempInstances);
-        payload.isError = false;
+        payload = Object.assign(
+          payload,
+          {
+            instances: _.cloneDeep(tempInstances),
+            attributes: _.cloneDeep(tempAttributes),
+            isError: false
+          }
+        );
         this.showMessage(this.$t(`m.info['粘贴成功']`));
       },
 

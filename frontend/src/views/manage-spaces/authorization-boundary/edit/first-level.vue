@@ -85,80 +85,6 @@
         </p>
       </div>
     </render-horizontal-block>
-
-    <!-- <render-horizontal-block
-            :label="$t(`m.levelSpace['最大可授权操作和资源边界']`)"
-            :label-width="renderLabelWidth('resource')"
-            :required="false">
-            <div class="grade-admin-select-wrapper">
-                <div class="showTableClick" @click.stop="isShowTableClick">
-                    <div class="action">
-                        <section class="action-wrapper" @click.stop="handleAddAction">
-                            <Icon bk type="plus-circle-shape" />
-                            <span>{{ $t(`m.levelSpace['选择操作和资源边界']`) }}</span>
-                        </section>
-                        <Icon
-                            type="info-fill"
-                            class="info-icon"
-                            v-bk-tooltips.top="{ content: addActionTips, width: 236, extCls: 'iam-tooltips-cls' }" />
-                    </div>
-                    <div class="sub-title" v-if="policyList.length > 0 && !isShowTable">
-                        {{ $t(`m.common['共']`) }}
-                        <span class="number">{{policyList.length}}</span>
-                        {{ $t(`m.common['个']`) }}
-                        {{ $t(`m.perm['操作权限']`) }}
-                    </div>
-                </div>
-                <div v-show="isShowTable">
-                    <div class="info-wrapper">
-                        <p class="tips">{{ infoText }}</p>
-                        <section style="min-width: 108px;">
-                            <bk-switcher
-                                v-model="isAllExpanded"
-                                :disabled="isAggregateDisabled"
-                                size="small"
-                                theme="primary"
-                                @change="handleAggregateAction" />
-                            <span class="text">{{ expandedText }}</span>
-                        </section>
-                    </div>
-                    <div class="resource-instance-wrapper"
-                        ref="instanceTableContentRef"
-                        v-bkloading="{ isLoading, opacity: 1, extCls: 'loading-resource-instance-cls' }">
-                        <render-instance-table
-                            :is-all-expanded="isAllExpanded"
-                            ref="resourceInstanceRef"
-                            :data="policyList"
-                            :list="policyList"
-                            :group-id="$route.params.id"
-                            :backup-list="aggregationsTableData"
-                            @on-delete="handleDelete"
-                            @on-aggregate-delete="handleAggregateDelete"
-                            @on-select="handleResourceSelect" />
-                    </div>
-                </div>
-            </div>
-        </render-horizontal-block> -->
-    <!-- <p class="action-empty-error" v-if="isShowActionEmptyError">{{ $t(`m.verify['操作和资源边界不可为空']`) }}</p> -->
-    <!-- <section v-if="isShowMemberAdd" ref="memberRef">
-            <render-action
-                :title="$t(`m.levelSpace['选择可授权人员边界']`)"
-                :tips="addMemberTips"
-                style="margin-bottom: 16px;"
-                @on-click="handleAddMember" />
-        </section> -->
-    <!-- <section ref="memberRef">
-            <render-member
-                :users="users"
-                :departments="departments"
-                :is-all="isAll"
-                :tip="addMemberTips"
-                :label-width="renderLabelWidth('member')"
-                @on-add="handleAddMember"
-                @on-delete="handleMemberDelete"
-                @on-delete-all="handleDeleteAll" />
-        </section>
-        <p class="action-empty-error" v-if="isShowMemberEmptyError">{{ $t(`m.verify['可授权人员边界不可为空']`) }}</p> -->
     <render-horizontal-block
       v-if="isRatingManager"
       ext-cls="reason-wrapper"
@@ -189,7 +115,7 @@
       :all-checked="isAll"
       show-limit
       @on-cancel="handleCancelAdd"
-      @on-sumbit="handleSumbitAdd" />
+      @on-sumbit="handleSubmitAdd" />
 
     <add-action-sideslider
       :all="allSystem"
@@ -393,7 +319,7 @@
 
       handleResourceSelect (payload) {
         window.changeDialog = true;
-        const instances = (function () {
+        const instances = (() => {
           const arr = [];
           payload.aggregateResourceType.forEach(resourceItem => {
             const { id, name, system_id } = resourceItem;
@@ -424,14 +350,38 @@
           });
           return arr;
         })();
-        const curAction = payload.actions.map(item => `${payload.system_id}&${item.id}`);
-        if (instances.length > 0) {
+        const attributes = (() => {
+          const arr = [];
+          payload.aggregateResourceType.forEach(resourceItem => {
+            const { id } = resourceItem;
+            const curAttrData = payload.attributesDisplayData[id];
+            if (curAttrData) {
+              curAttrData.forEach(v => {
+                const curItem = arr.find(_ => _.type === id);
+                if (curItem) {
+                  arr.push(v);
+                } else {
+                  arr.push({
+                    ...v,
+                    ...{
+                      type: id
+                    }
+                  });
+                }
+              });
+            }
+          });
+          return arr;
+        })();
+        const isExistData = instances.length > 0 || attributes.length > 0;
+        if (isExistData) {
+          const curAction = payload.actions.map(item => `${payload.system_id}&${item.id}`);
           this.aggregationsTableData.forEach(item => {
             if (curAction.includes(`${item.system_id}&${item.id}`)) {
               item.resource_groups.forEach(groupItem => {
                 groupItem.related_resource_types
                   && groupItem.related_resource_types.forEach(subItem => {
-                    subItem.condition = [new Condition({ instances }, '', 'add')];
+                    subItem.condition = [new Condition({ instances, attributes }, '', 'add')];
                   });
               });
             }
@@ -442,8 +392,8 @@
       async fetchAggregationAction (payload) {
         this.isLoading = true;
         try {
-          const res = await this.$store.dispatch('aggregate/getAggregateAction', { system_ids: payload })
-          ;(res.data.aggregations || []).forEach(item => {
+          const res = await this.$store.dispatch('aggregate/getAggregateAction', { system_ids: payload });
+          (res.data.aggregations || []).forEach(item => {
             item.$id = guid();
           });
           const data = this.getFilterAggregation(res.data.aggregations);
@@ -517,7 +467,7 @@
               return subItem.isAggregate && _.isEqual(target, subItem.actions.map(v => v.id).sort());
             });
             return !existData;
-          }).map((item, index) => {
+          }).map((item) => {
             // 从缓存值中取值
             const isExistActions = this.aggregationsTableData.filter(subItem =>
               item.actions.map(v => `${v.system_id}&${v.id}`).includes(`${subItem.system_id}&${subItem.id}`)
@@ -527,45 +477,43 @@
             // 是否都选择了实例
             const isAllHasInstance = conditions.every(subItem => subItem[0] !== 'none' && subItem.length > 0);
             if (isAllHasInstance) {
-              const instances = conditions.map(subItem => subItem.map(v => v.instance));
-              let isAllEqual = true;
-              for (let i = 0; i < instances.length - 1; i++) {
-                if (!_.isEqual(instances[i], instances[i + 1])) {
-                  isAllEqual = false;
-                  break;
+              const instances = conditions.map(subItem => subItem.map(v => v.instance || []));
+              const attributes = conditions.map(subItem => subItem.map(v => v.attribute || []));
+              const hasInstance = instances.flat(Infinity);
+              const hasAttribute = _.uniqWith(attributes.flat(Infinity), _.isEqual);
+              // 数据扁平化后实例是否为空
+              if (hasInstance.length) {
+                item.instances = [];
+                let isAllEqual = true;
+                for (let i = 0; i < instances.length - 1; i++) {
+                  if (!_.isEqual(instances[i], instances[i + 1])) {
+                    isAllEqual = false;
+                    break;
+                  }
+                }
+                if (isAllEqual) {
+                  const instanceData = instances[0][0];
+                  instanceData.forEach(pathItem => {
+                    const instance = pathItem.path.map(e => {
+                      return {
+                        id: e[0].id,
+                        name: e[0].name,
+                        type: e[0].type
+                      };
+                    });
+                    item.instances.push(...instance);
+                  });
+                  this.setInstancesDisplayData(item);
                 }
               }
-              console.log('instances: ');
-              console.log(instances);
-              console.log('isAllEqual: ' + isAllEqual);
-              if (isAllEqual) {
-                console.log(instances[0][0]);
-                // const instanceData = instances[0][0][0];
-                // item.instances = instanceData.path.map(pathItem => {
-                //     return {
-                //         id: pathItem[0].id,
-                //         name: pathItem[0].name
-                //     };
-                // });
-                const instanceData = instances[0][0];
-                console.log('instanceData', instanceData);
-                item.instances = [];
-                instanceData.map(pathItem => {
-                  const instance = pathItem.path.map(e => {
-                    return {
-                      id: e[0].id,
-                      name: e[0].name,
-                      type: e[0].type
-                    };
-                  });
-                  item.instances.push(...instance);
-                });
-                this.setInstancesDisplayData(item);
-              } else {
-                item.instances = [];
+              // 数据扁平化后属性是否为空
+              if (hasAttribute.length) {
+                item.attributes = [...hasAttribute];
+                this.setAttributesDisplayData(item);
               }
             } else {
               item.instances = [];
+              item.attributes = [];
             }
             return new GradeAggregationPolicy(item);
           });
@@ -594,43 +542,71 @@
             const curAction = this.originalList.find(_ => `${_.system_id}&${_.id}` === item);
             const curAggregation = aggregationData.find(_ => _.actions.map(v => `${_.system_id}&${v.id}`).includes(item));
             this.policyList.unshift(new GradePolicy({ ...curAction, tag: 'add' }, 'add'));
-            if (curAggregation && curAggregation.instances.length > 0) {
-              const curData = this.policyList[0];
-              const instances = (function () {
-                const arr = [];
-                const aggregateResourceType = curAggregation.aggregateResourceType;
-                aggregateResourceType.forEach(aggregateResourceItem => {
-                  const { id, name, system_id } = aggregateResourceItem;
-                  curAggregation.instances.forEach(v => {
-                    const curItem = arr.find(_ => _.type === id);
-                    if (curItem) {
-                      curItem.path.push([{
-                        id: v.id,
-                        name: v.name,
-                        system_id,
-                        type: id,
-                        type_name: name
-                      }]);
-                    } else {
-                      arr.push({
-                        name,
-                        type: id,
-                        path: [[{
+            if (curAggregation) {
+              let instances = [];
+              let attributes = [];
+              const curData = this.policyList.length > 0 ? this.policyList[0] : {};
+              if (curAggregation.instances && curAggregation.instances.length > 0) {
+                instances = (() => {
+                  const arr = [];
+                  const aggregateResourceType = curAggregation.aggregateResourceType;
+                  aggregateResourceType.forEach(aggregateResourceItem => {
+                    const { id, name, system_id } = aggregateResourceItem;
+                    curAggregation.instances.forEach(v => {
+                      const curItem = arr.find(_ => _.type === id);
+                      if (curItem) {
+                        curItem.path.push([{
                           id: v.id,
                           name: v.name,
                           system_id,
                           type: id,
                           type_name: name
-                        }]]
-                      });
-                    }
+                        }]);
+                      } else {
+                        arr.push({
+                          name,
+                          type: id,
+                          path: [[{
+                            id: v.id,
+                            name: v.name,
+                            system_id,
+                            type: id,
+                            type_name: name
+                          }]]
+                        });
+                      }
+                    });
                   });
-                });
-                return arr;
-              })();
-              if (instances.length > 0) {
+                  return arr;
+                })();
+              }
+              if (curAggregation.attributes && curAggregation.attributes.length > 0) {
+                attributes = (() => {
+                  const arr = [];
+                  const aggregateResourceType = curAggregation.aggregateResourceType;
+                  aggregateResourceType.forEach(aggregateResourceItem => {
+                    const { id } = aggregateResourceItem;
+                    curAggregation.attributes.forEach(v => {
+                      const curItem = arr.find(_ => _.type === id);
+                      if (curItem) {
+                        arr.push(v);
+                      } else {
+                        arr.push({
+                          ...v,
+                          ...{
+                            type: id
+                          }
+                        });
+                      }
+                    });
+                  });
+                  return arr;
+                })();
+              }
+              const isExistData = instances.length > 0 || attributes.length > 0;
+              if (isExistData) {
                 curData.related_resource_types.forEach(subItem => {
-                  subItem.condition = [new Condition({ instances }, '', 'add')];
+                  subItem.condition = [new Condition({ instances, attributes }, '', 'add')];
                 });
               }
             }
@@ -638,7 +614,7 @@
         });
       },
 
-      // 设置InstancesDisplayData
+      // 格式化实例数据格式
       setInstancesDisplayData (data) {
         data.instancesDisplayData = data.instances.reduce((p, v) => {
           if (!p[v['type']]) {
@@ -648,6 +624,17 @@
             id: v.id,
             name: v.name
           });
+          return p;
+        }, {});
+      },
+
+      // 格式化属性数据格式
+      setAttributesDisplayData (data) {
+        data.attributesDisplayData = data.attributes.reduce((p, v) => {
+          if (!p[v['type']]) {
+            p[v['type']] = [];
+          }
+          p[v['type']].push(v);
           return p;
         }, {});
       },
@@ -824,7 +811,7 @@
         this.isShowMemberAdd = true;
       },
 
-      handleSumbitAdd (payload) {
+      handleSubmitAdd (payload) {
         window.changeDialog = true;
         const { users, departments } = payload;
         this.isAll = payload.isAll;

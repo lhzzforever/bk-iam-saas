@@ -481,7 +481,10 @@
                 const chainLen = subItem.resource_type_chain.length;
                 const curChainId = subItem.resource_type_chain.map(item => item.id);
                 const lastChainId = subItem.resource_type_chain[chainLen - 1].id;
-                const curTypes = isHasInstance ? item.instance.map(v => v.path.map(vItem => vItem.map(_ => _.type))) : [];
+                let curTypes = [];
+                if (isHasInstance) {
+                  curTypes = item.instance.map(v => v.path.map(vItem => vItem.map(_ => _.type)));
+                }
                 return curTypes.filter(typeItem => {
                   if (subItem.ignore_iam_path && typeItem.length === 1) {
                     return typeItem[0] === lastChainId;

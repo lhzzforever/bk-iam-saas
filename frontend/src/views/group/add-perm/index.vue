@@ -168,9 +168,6 @@
         }
         return isDisabled;
       },
-      expandedText () {
-          return this.isAllExpanded ? this.$t(`m.grading['批量编辑']`) : this.$t(`m.grading['逐项编辑']`);
-      },
       defaultValue () {
           if (this.originalList.length < 1) {
               return [];
@@ -362,10 +359,9 @@
       },
 
       handleAttrValueSelected (payload) {
-        console.log('payload', payload);
         window.changeDialog = true;
         this.isShowErrorTips = false;
-        const instances = (function () {
+        const instances = (() => {
           const arr = [];
           payload.aggregateResourceType.forEach(resourceItem => {
             const { id, name, system_id } = resourceItem;
@@ -396,14 +392,37 @@
           });
           return arr;
         })();
-        if (instances.length > 0) {
+        const attributes = (() => {
+          const arr = [];
+          payload.aggregateResourceType.forEach(resourceItem => {
+            const { id } = resourceItem;
+            const curAttrData = payload.attributesDisplayData[id];
+            if (curAttrData) {
+              curAttrData.forEach(v => {
+                const curItem = arr.find(_ => _.type === id);
+                if (curItem) {
+                  arr.push(v);
+                } else {
+                  arr.push({
+                    ...v,
+                    ...{
+                      type: id
+                    }
+                  });
+                }
+              });
+            }
+          });
+          return arr;
+        })();
+        const isExistData = instances.length > 0 || attributes.length > 0;
+        if (isExistData) {
           const actions = this.curMap.get(payload.aggregationId);
           actions.forEach(item => {
-            item.resource_groups && item.resource_groups.forEach(groupItem => {
-              groupItem.related_resource_types
-                && groupItem.related_resource_types.forEach(subItem => {
-                  subItem.condition = [new Condition({ instances }, '', 'add')];
-                });
+            item.resource_groups.forEach(groupItem => {
+              groupItem.related_resource_types.forEach(subItem => {
+                subItem.condition = [new Condition({ instances, attributes }, '', 'add')];
+              });
             });
           });
         }
@@ -536,6 +555,7 @@
         let tempData = [];
         let templateIds = [];
         let instancesDisplayData = {};
+        let attributesDisplayData = {};
         if (payload) {
           this.tableList.forEach(item => {
             if (!item.aggregationId) {
@@ -549,59 +569,61 @@
               tempData = _.uniqWith(tempData, _.isEqual);
             } else {
               let curInstances = [];
+              let curAttributes = [];
               // 这里避免从模板选择的权限和自定义权限下的操作是一致的，所以需要去重
               tempData = _.uniqWith(tempData, _.isEqual);
               const conditions = value.map((subItem) => subItem.resource_groups
                 && subItem.resource_groups[0].related_resource_types[0].condition);
               // 是否都选择了实例
               const isAllHasInstance = conditions.every(subItem => subItem[0] !== 'none' && subItem.length > 0);
+              // 批量编辑和逐项编辑增加属性条件业务
               if (isAllHasInstance) {
-                const instances = conditions.map(subItem => subItem.map(v => v.instance));
-                let isAllEqual = true;
-                for (let i = 0; i < instances.length - 1; i++) {
-                  if (!_.isEqual(instances[i], instances[i + 1])) {
-                    isAllEqual = false;
-                    break;
+                const instances = conditions.map(subItem => subItem.map(v => v.instance || []));
+                const attributes = conditions.map(subItem => subItem.map(v => v.attribute || []));
+                const hasInstance = instances.flat(Infinity);
+                const hasAttribute = _.uniqWith(attributes.flat(Infinity), _.isEqual);
+                // 数据扁平化后实例是否为空
+                if (hasInstance.length) {
+                  curInstances = [];
+                  let isAllEqual = true;
+                  for (let i = 0; i < instances.length - 1; i++) {
+                    if (!_.isEqual(instances[i], instances[i + 1])) {
+                      isAllEqual = false;
+                      break;
+                    }
+                  }
+                  if (isAllEqual) {
+                    const instanceData = instances[0][0];
+                    instanceData.forEach(pathItem => {
+                      const instance = pathItem.path.map(e => {
+                        return {
+                          id: e[0].id,
+                          name: e[0].name,
+                          type: e[0].type
+                        };
+                      });
+                      curInstances.push(...instance);
+                    });
+                    instancesDisplayData = this.setInstancesDisplayData(curInstances);
                   }
                 }
-                console.log('instances: ');
-                console.log(instances);
-                console.log('isAllEqual: ' + isAllEqual);
-                if (isAllEqual) {
-                  // const instanceData = instances[0][0][0];
-                  // curInstances = instanceData.path.map(pathItem => {
-                  //     return {
-                  //         id: pathItem[0].id,
-                  //         name: pathItem[0].name
-                  //     };
-                  // });
-                  const instanceData = instances[0][0];
-                  console.log('instanceData', instanceData);
-                  curInstances = [];
-                  instanceData.forEach(pathItem => {
-                    const instance = pathItem.path.map(e => {
-                      return {
-                        id: e[0].id,
-                        name: e[0].name,
-                        type: e[0].type
-                      };
-                    });
-                    curInstances.push(...instance);
-                  });
-                  instancesDisplayData = this.setInstancesDisplayData(curInstances);
-                  console.log('instancesDisplayData', instancesDisplayData);
-                } else {
-                  curInstances = [];
+                // 数据扁平化后属性是否为空
+                if (hasAttribute.length) {
+                  curAttributes = [...hasAttribute];
+                  attributesDisplayData = this.setAttributesDisplayData(curAttributes);
                 }
               } else {
                 curInstances = [];
+                curAttributes = [];
               }
               tempData.push(new GroupAggregationPolicy({
                 aggregationId: key,
                 aggregate_resource_types: value[0].aggregateResourceType,
                 actions: value,
                 instances: curInstances,
-                instancesDisplayData
+                attributes: curAttributes,
+                instancesDisplayData,
+                attributesDisplayData
               }));
             }
             templateIds.push(value[0].detail.id);
@@ -625,7 +647,6 @@
           const list = tempData.filter(subItem => subItem.detail.id === item);
           tempList.push(...list);
         });
-        console.log('tempList', tempList);
         this.tableList = _.cloneDeep(tempList);
         this.handleUnlimitedActionChange(this.isAllUnlimited);
       },
@@ -651,18 +672,23 @@
                 item.name = item.name.split('，')[0];
               }
             }
-            if (item.instances && item.isAggregate) {
+            // 处理无限制、只有实例或者属性的交互
+            if ((item.instances || item.attributes) && item.isAggregate) {
               item.isNoLimited = false;
-              item.isError = !(item.instances.length || (!item.instances.length && item.isNoLimited));
               item.isNeedNoLimited = true;
-              if (!payload || item.instances.length) {
+              item.isError = !(
+                (item.instances.length > 0 && item.attributes.length > 0)
+                || (!item.instances.length && !item.attributes.length && item.isNoLimited)
+              );
+              if (!payload || item.instances.length || item.attributes.length) {
                 item.isNoLimited = false;
                 item.isError = false;
               }
-              if ((!item.instances.length && !payload && item.isNoLimited) || payload) {
+              if ((!item.instances.length && !item.attributes.length && !payload && item.isNoLimited) || payload) {
                 item.isNoLimited = true;
                 item.isError = false;
                 item.instances = [];
+                item.attributes = [];
               }
               return this.$set(
                 tableData,
@@ -675,6 +701,7 @@
         }
       },
 
+      // 格式化实例数据格式
       setInstancesDisplayData (data) {
         const instancesDisplayData = data.reduce((p, v) => {
           if (!p[v['type']]) {
@@ -687,6 +714,18 @@
           return p;
         }, {});
         return instancesDisplayData;
+      },
+
+      // 格式化属性数据格式
+      setAttributesDisplayData (data) {
+        const attributesDisplayData = data.reduce((p, v) => {
+          if (!p[v['type']]) {
+            p[v['type']] = [];
+          }
+          p[v['type']].push(v);
+          return p;
+        }, {});
+        return attributesDisplayData;
       },
 
       handleEditCustom () {

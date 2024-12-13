@@ -61,15 +61,16 @@
               </label>
               <div class="bk-button-group tab-button" v-else>
                 <bk-button
-                  v-for="(item, index) in row.aggregateResourceType"
-                  :key="item.id" @click="selectResourceType(row, index)"
-                  :class="row.selectedIndex === index ? 'is-selected' : ''"
                   size="small"
+                  v-for="(item, index) in row.aggregateResourceType"
+                  :key="item.id"
+                  :class="[{ 'is-selected': row.selectedIndex === index }]"
+                  @click="selectResourceType(row, index)"
                 >
                   {{item.name}}
-                  <span v-if="row.instancesDisplayData[item.id] && row.instancesDisplayData[item.id].length">
-                    ({{row.instancesDisplayData[item.id].length}})
-                  </span>
+                  <template v-if="formatDisplayResourceTotal(row, item.id) > 0">
+                    <span>({{ formatDisplayResourceTotal(row, item.id) }})</span>
+                  </template>
                 </bk-button>
               </div>
               <render-condition
@@ -347,6 +348,22 @@
             }
             return displayValue;
           }
+        };
+      },
+      // 处理聚合后有多个聚合类型场下实例和属性的总和
+      formatDisplayResourceTotal () {
+        return (payload, resourceId) => {
+          let result = 0;
+          const { attributesDisplayData, instancesDisplayData } = payload;
+          const hasInstance = instancesDisplayData[resourceId] && instancesDisplayData[resourceId].length > 0;
+          const hasAttribute = attributesDisplayData[resourceId] && attributesDisplayData[resourceId].length > 0;
+          if (hasInstance) {
+            result += instancesDisplayData[resourceId].length;
+          }
+          if (hasAttribute) {
+            result += attributesDisplayData[resourceId].length;
+          }
+          return result;
         };
       }
     },
@@ -886,7 +903,9 @@
           tempInstances = this.curCopyData;
           tempAttributes = this.curCopyAttrData;
         } else {
-          if (this.curCopyData[0] !== 'none') {
+          const hasInstance = this.curCopyData.length > 0 && this.curCopyData[0] !== 'none';
+          const hasAttribute = this.curCopyAttrData.length > 0;
+          if (hasInstance) {
             const instances = this.curCopyData.map(item => item.instance);
             const instanceData = instances[0][0];
             tempInstances = instanceData.path.map(pathItem => {
@@ -896,12 +915,35 @@
               };
             });
           }
+          if (hasAttribute) {
+            const { id } = this.curAggregateResourceType;
+            this.curCopyAttrData.forEach(v => {
+              const curItem = tempAttributes.find(_ => _.type === id);
+              if (curItem) {
+                tempAttributes.push(v);
+              } else {
+                tempAttributes.push({
+                  ...v,
+                  ...{
+                    type: id
+                  }
+                });
+              }
+            });
+          }
         }
-        if (tempInstances.length < 1 && tempAttributes.length < 1) {
+        const isEmpty = !tempInstances.length && !tempAttributes.length;
+        if (isEmpty) {
           return;
         }
-        payload.instances = _.cloneDeep(tempInstances);
-        payload.isError = false;
+        payload = Object.assign(
+          payload,
+          {
+            instances: _.cloneDeep(tempInstances),
+            attributes: _.cloneDeep(tempAttributes),
+            isError: false
+          }
+        );
         this.showMessage(this.$t(`m.info['粘贴成功']`));
       },
 
@@ -1066,18 +1108,18 @@
             // if (`${item.aggregateResourceType[item.selectedIndex].system_id}${item.aggregateResourceType[item.selectedIndex].id}` === this.curCopyKey && this.curCopyDataId !== item.$id) {
             item.aggregateResourceType.forEach(aggregateResourceItem => {
               if (`${aggregateResourceItem.system_id}${aggregateResourceItem.id}` === this.curCopyKey && this.curCopyDataId !== item.$id) {
+                item.instances = _.cloneDeep(tempArrAggregateData);
+                item.attributes = _.cloneDeep(tempAttrAggregateData);
                 if (Object.keys(item.instancesDisplayData).length) {
                   item.instancesDisplayData[this.instanceKey] = _.cloneDeep(tempArrAggregateData);
                   item.instances = this.setInstanceData(item.instancesDisplayData);
                 } else {
-                  item.instances = _.cloneDeep(tempArrAggregateData);
                   this.setInstancesDisplayData(item);
                 }
                 // 处理聚合属性
                 if (Object.keys(item.attributesDisplayData).length) {
                   item.attributesDisplayData[this.instanceKey] = _.cloneDeep(tempAttrAggregateData);
                 }
-                item.attributes = _.cloneDeep(tempAttrAggregateData);
               }
             });
             item.isError = false;

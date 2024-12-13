@@ -24,11 +24,17 @@
           <div class="relation-content-wrapper" v-if="!!row.isAggregate">
             <label class="resource-type-name" v-if="row.aggregateResourceType.length === 1">{{ row.aggregateResourceType[0].name }}</label>
             <div class="bk-button-group tab-button" v-else>
-              <bk-button v-for="(item, index) in row.aggregateResourceType"
-                :key="item.id" @click="selectResourceType(row, index)"
-                :class="row.selectedIndex === index ? 'is-selected' : ''" size="small">{{item.name}}
-                <span v-if="!row.isNoLimited && row.instancesDisplayData[item.id] && row.instancesDisplayData[item.id].length">
-                  ({{row.instancesDisplayData[item.id].length}})</span>
+              <bk-button
+                size="small"
+                v-for="(item, index) in row.aggregateResourceType"
+                :key="item.id"
+                :class="[{ 'is-selected': row.selectedIndex === index }]"
+                @click="selectResourceType(row, index)"
+              >
+                {{item.name}}
+                <template v-if="!row.isNoLimited && formatDisplayResourceTotal(row, item.id) > 0">
+                  <span>({{ formatDisplayResourceTotal(row, item.id) }})</span>
+                </template>
               </bk-button>
             </div>
             <div class="group-container">
@@ -256,10 +262,13 @@
       @on-after-leave="handlePreviewDialogClose" />
 
     <render-aggregate-sideslider
-      :show.sync="isShowAggregateSideslider"
+      ref="aggregateRef"
+      :show.sync="isShowAggregateSideSlider"
       :params="aggregateResourceParams"
       :value="aggregateValue"
-      @on-selected="handlerSelectAggregateRes" />
+      :attr-value="aggregateAttrValue"
+      @on-selected="handlerSelectAggregateRes"
+    />
   </div>
 </template>
 
@@ -349,14 +358,17 @@
         previewDialogTitle: '',
         previewResourceParams: {},
         curCopyData: ['none'],
+        curCopyAttrData: [],
         curCopyType: '',
+        curCopyKey: '',
         curInstanceMode: '',
         curId: '',
         isLoading: false,
-        isShowAggregateSideslider: false,
+        isShowAggregateSideSlider: false,
         aggregateResourceParams: {},
         aggregateIndex: -1,
         aggregateValue: [],
+        aggregateAttrValue: [],
         // 当前复制的数据形态: normal: 普通; aggregate: 聚合后
         curCopyMode: 'normal',
         curAggregateResourceType: {},
@@ -469,6 +481,22 @@
             return displayValue;
           }
         };
+      },
+      // 处理聚合后有多个聚合类型场下实例和属性的总和
+      formatDisplayResourceTotal () {
+        return (payload, resourceId) => {
+          let result = 0;
+          const { attributesDisplayData, instancesDisplayData } = payload;
+          const hasInstance = instancesDisplayData[resourceId] && instancesDisplayData[resourceId].length > 0;
+          const hasAttribute = attributesDisplayData[resourceId] && attributesDisplayData[resourceId].length > 0;
+          if (hasInstance) {
+            result += instancesDisplayData[resourceId].length;
+          }
+          if (hasAttribute) {
+            result += attributesDisplayData[resourceId].length;
+          }
+          return result;
+        };
       }
     },
     watch: {
@@ -509,12 +537,14 @@
           if (value !== '') {
             this.curCopyType = '';
             this.curCopyData = ['none'];
+            this.curCopyAttrData = [];
             this.curIndex = -1;
             this.curResIndex = -1;
             this.curGroupIndex = -1;
             this.aggregateResourceParams = {};
             this.aggregateIndex = -1;
             this.aggregateValue = [];
+            this.aggregateAttrValue = [];
             this.curCopyMode = 'normal';
             this.curCopyParams = {};
             this.curAggregateResourceType = {};
@@ -691,6 +721,7 @@
         this.curCopyKey = `${payload.aggregateResourceType.system_id}${payload.aggregateResourceType.id}`;
         this.curAggregateResourceType = payload.aggregateResourceType[payload.selectedIndex];
         this.curCopyData = _.cloneDeep(payload.instancesDisplayData[this.instanceKey]);
+        this.curCopyAttrData = _.cloneDeep(payload.attributesDisplayData[this.instanceKey]);
         this.curCopyMode = 'aggregate';
         this.showMessage(this.$t(`m.info['实例复制']`));
         this.$refs[`condition_${index}_aggregateRef`] && this.$refs[`condition_${index}_aggregateRef`].setImmediatelyShow(true);
@@ -698,10 +729,14 @@
 
       handlerAggregateOnPaste (payload) {
         let tempInstances = [];
+        let tempAttributes = [];
         if (this.curCopyMode === 'aggregate') {
           tempInstances = this.curCopyData;
+          tempAttributes = this.curCopyAttrData;
         } else {
-          if (this.curCopyData[0] !== 'none') {
+          const hasInstance = this.curCopyData.length > 0 && this.curCopyData[0] !== 'none';
+          const hasAttribute = this.curCopyAttrData.length > 0;
+          if (hasInstance) {
             const instances = this.curCopyData.map(item => item.instance);
             const instanceData = instances[0][0];
             tempInstances = instanceData.path.map(pathItem => {
@@ -711,12 +746,35 @@
               };
             });
           }
+          if (hasAttribute) {
+            const { id } = this.curAggregateResourceType;
+            this.curCopyAttrData.forEach(v => {
+              const curItem = tempAttributes.find(_ => _.type === id);
+              if (curItem) {
+                tempAttributes.push(v);
+              } else {
+                tempAttributes.push({
+                  ...v,
+                  ...{
+                    type: id
+                  }
+                });
+              }
+            });
+          }
         }
-        if (tempInstances.length < 1) {
+        const isEmpty = !tempInstances.length && !tempAttributes.length;
+        if (isEmpty) {
           return;
         }
-        payload.instances = _.cloneDeep(tempInstances);
-        payload.isError = false;
+        payload = Object.assign(
+          payload,
+          {
+            instances: _.cloneDeep(tempInstances),
+            attributes: _.cloneDeep(tempAttributes),
+            isError: false
+          }
+        );
         this.showMessage(this.$t(`m.info['粘贴成功']`));
       },
 
@@ -834,24 +892,26 @@
           name: e.name
         }));
       },
-
+      
       showAggregateResourceInstance (data, index) {
         const aggregateResourceParams = {
           ...data.aggregateResourceType[data.selectedIndex],
-          curAggregateSystemId: this.systemId
+          curAggregateSystemId: data.system_id
         };
         this.aggregateResourceParams = _.cloneDeep(aggregateResourceParams);
-        this.aggregateIndex = index;
-        const instanceKey = data.aggregateResourceType[this.selectedIndex].id;
-        this.instanceKey = instanceKey;
+        this.aggregateIndex = !this.curFilterSystem ? index : this.tableList.findIndex(item => `${item.system_id}-${item.$id}` === this.curFilterSystem);
+        const instanceKey = data.aggregateResourceType[data.selectedIndex].id;
         if (!data.instancesDisplayData[instanceKey]) data.instancesDisplayData[instanceKey] = [];
+        if (!data.attributesDisplayData[instanceKey]) data.attributesDisplayData[instanceKey] = [];
         this.aggregateValue = _.cloneDeep(data.instancesDisplayData[instanceKey].map(item => {
           return {
             id: item.id,
             display_name: item.name
           };
         }));
-        this.isShowAggregateSideslider = true;
+        this.aggregateAttrValue = _.cloneDeep(data.attributesDisplayData[instanceKey] || []);
+        this.instanceKey = instanceKey;
+        this.isShowAggregateSideSlider = true;
       },
 
       showMessage (payload) {
@@ -1187,12 +1247,12 @@
         this.curCopyKey = `${payload.system_id}${payload.type}`;
         this.curCopyData = _.cloneDeep(payload.condition);
         this.curCopyMode = 'normal';
-        this.curCopyParams = this.getBacthCopyParms(action, payload);
+        this.curCopyParams = this.getBatchCopyParams(action, payload);
         this.showMessage(this.$t(`m.info['实例复制']`));
         this.$refs[`condition_${index}_${subIndex}_ref`][0] && this.$refs[`condition_${index}_${subIndex}_ref`][0].setImmediatelyShow(true);
       },
 
-      getBacthCopyParms (payload, content) {
+      getBatchCopyParams (payload, content) {
         const actions = [];
         this.tableList.forEach(item => {
           if (!item.isAggregate) {

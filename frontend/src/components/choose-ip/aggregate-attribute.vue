@@ -82,7 +82,7 @@
 
 <script>
   import { sleep } from '@/common/util';
-  import { secondAttrData } from '@/views/group/add-perm/test';
+  // import { secondAttrData } from '@/views/group/add-perm/test';
   import Attribute from '@/model/attribute';
   import BkUserSelector from '@blueking/user-selector';
 
@@ -180,11 +180,11 @@
     watch: {
       value: {
         handler (val) {
-          if (val.length < 1) {
+          if (!val.length) {
             this.attrValues = [new Attribute(this.ATTRIBUTE_ITEM)];
             return;
           }
-          this.attrValues = val;
+          this.attrValues = [...val];
           const flag = Object.keys(this.attrValueListMap).length > 0;
           this.attrValues.forEach(async item => {
             if (!flag && item.id) {
@@ -196,7 +196,7 @@
       },
       limitValue: {
         handler (val) {
-          if (val.length > 0) {
+          if (val.length) {
             this.isDisabledMode = true;
             this.pagination.limit = 10000;
             let tempArr = [];
@@ -209,15 +209,15 @@
               });
               this.$set(this.attrValueListMap, item.id, tempList);
             });
-            if (this.value.length < 1) {
+            if (!this.value.length) {
               this.attrValues = val.map(item => {
                 const { id, name } = item;
                 return new Attribute({ id, name, selecteds: [], values: [] });
               });
-              tempArr = this.attrValues;
+              tempArr = [...this.attrValues];
             } else {
               const differenceValue = val.filter(item => !this.value.map(v => v.id).includes(item.id));
-              if (differenceValue.length > 0) {
+              if (differenceValue.length) {
                 const tempValues = differenceValue.map(item => {
                   const { id, name } = item;
                   return new Attribute({ id, name, selecteds: [], values: [] });
@@ -238,7 +238,7 @@
       },
       list: {
         handler (val) {
-          if (val.length > 0) {
+          if (val.length) {
             val.forEach(item => {
               if (!this.attrValueListMap.hasOwnProperty(item.id)) {
                 this.$set(this.attrValueListMap, item.id, []);
@@ -295,7 +295,7 @@
         item.loading = true;
         try {
           const { current, limit } = this.pagination;
-          const { data } = await secondAttrData || await this.$store.dispatch('permApply/getResourceAttrValues', {
+          const { data } = await this.$store.dispatch('permApply/getResourceAttrValues', {
             ...this.params,
             limit,
             offset: limit * (current - 1),
@@ -341,7 +341,7 @@
         if (curAttr) {
           payload.name = curAttr.display_name || '';
         }
-        if (this.attrValueListMap[payload.id] && this.attrValueListMap[payload.id].length < 1) {
+        if (this.attrValueListMap[payload.id] && !this.attrValueListMap[payload.id].length) {
           this.resetPagination(payload, '', true, false);
         }
       },
@@ -369,9 +369,6 @@
 
       async handleScroll (event) {
         if (this.pagination.current > this.pagination.totalPage) {
-          // 删除loading项
-          // 这里不能shift, 否则会存在滚动条往上滚动的时候，会删掉之前的数据
-          // this.attrValueListMap[this.curOperateData.id].shift();
           return;
         }
         if (event.target.scrollTop + event.target.offsetHeight >= event.target.scrollHeight - 1) {
@@ -397,7 +394,7 @@
         payload.isScrollRemote = isScrollRemote;
         const { limit, current } = this.pagination;
         try {
-          const res = await secondAttrData || await this.$store.dispatch('permApply/getResourceAttrValues', {
+          const res = await this.$store.dispatch('permApply/getResourceAttrValues', {
             ...this.params,
             limit: limit,
             offset: limit * (current - 1),

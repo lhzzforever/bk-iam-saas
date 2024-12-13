@@ -45,7 +45,6 @@
                         :is-error="content.isError"
                         @on-mouseover="handlerConditionMouseover(content, row)"
                         @on-mouseleave="handlerConditionMouseleave(content)"
-                        @on-restore="handlerOnRestore(content)"
                         @on-copy="handlerOnCopy(content, $index, contentIndex, index, row.add_actions[index])"
                         @on-paste="handlerOnPaste(...arguments, content)"
                         @on-batch-paste="handlerOnBatchPaste(...arguments, content, $index, contentIndex, index)"

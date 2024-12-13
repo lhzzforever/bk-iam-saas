@@ -29,12 +29,13 @@ export default class Attribute {
   constructor (payload, flag = 'add') {
     this.id = payload.id || '';
     this.name = payload.name || '';
+    this.type = payload.type || '';
     this.disabled = flag === '';
     this.loading = false;
     this.init(payload);
   }
   init (payload) {
-    if (!payload.values || payload.values.length < 1) {
+    if (!payload.values || !payload.values.length) {
       this.values = [];
       this.selecteds = [];
       return;

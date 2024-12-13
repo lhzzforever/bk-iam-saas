@@ -1,12 +1,11 @@
 <template>
-  <!-- eslint-disable max-len -->
   <bk-sideslider
     :is-show="show"
     :title="curTitle"
     :width="960"
     quick-close
     transfer
-    ext-cls="iam-aggregate-resource-sideslider-cls"
+    ext-cls="iam-aggregate-resource-slider-cls"
     @update:isShow="handleCancel"
   >
     <div
@@ -16,7 +15,7 @@
     >
       <div
         v-if="isShowUnlimited"
-        class="no-limited-wrapper flex-between"
+        class="flex-between no-limited-wrapper"
         :style="{
           borderBottom: !isHide ? 0 : '',
           marginBottom: isAggregateEmptyMessage ? '10px' : 0
@@ -43,7 +42,7 @@
         class="no-aggregate-wrapper single-hide"
       >
         <Icon type="info-new" />
-        <span>{{ $t(`m.resource['操作之间无公共实例，无法批量编辑']`) }}</span>
+        <span>{{ $t(`m.resource['操作之间无公共实例和属性条件，无法批量编辑']`) }}</span>
       </div>
       <template v-if="!isHide">
         <div class="select-wrapper">
@@ -144,7 +143,7 @@
             <Attribute
               :value="conditionData.attribute"
               :list="attributesList"
-              :limit-value="scopeAttrList"
+              :limit-value="defaultAttrList"
               :params="attributeParams"
               @on-change="handleAttrValueChange"
             />
@@ -167,7 +166,7 @@
   import { cloneDeep } from 'lodash';
   import { mapGetters } from 'vuex';
   import { leaveConfirm } from '@/common/leave-confirm';
-  import { formatCodeData } from '@/common/util';
+  import { formatCodeData, sleep } from '@/common/util';
   import { firstAttrData } from '@/views/group/add-perm/test';
   import Condition from '@/model/condition';
   import TopologyInput from '@/components/choose-ip/topology-input';
@@ -212,6 +211,10 @@
         type: Array,
         default: () => []
       },
+      defaultAttrList: {
+        type: Array,
+        default: () => []
+      },
       isSuperManager: {
         type: Boolean,
         default: () => true
@@ -244,7 +247,6 @@
         attributesList: [],
         curSelectedList: [],
         curSelectedIds: [],
-        scopeAttrList: [],
         searchValue: '',
         loading: false,
         isFilter: false,
@@ -293,6 +295,9 @@
       isHasDefaultData () {
         return this.defaultList.length > 0;
       },
+      isHasDefaultAttrData () {
+        return this.defaultAttrList.length > 0;
+      },
       isShowUnlimited () {
         const result
           = ['applyCustomPerm'].includes(this.$route.name)
@@ -310,20 +315,18 @@
           if (value) {
             this.listLoading = true;
             this.pageChangeAlertMemo = window.changeAlert;
-            window.changeAlert = 'iamSidesider';
             // 为了减少组件之间数据传递的代码量，这里再重新调用一次接口做任意类型数据的处理
             if (this.params.curAggregateSystemId) {
               await this.fetchAuthorizationScopeActions(
                 this.params.curAggregateSystemId
               );
             }
-            if ((this.isSuperManager && !this.isHasDefaultData)
-              || this.isAny
-              || this.isUnlimited
-            ) {
+            // 只有无限制或者任意类型比如返回数据是*或者空数组代表没有授权范围限制
+            if (this.isAny || this.isUnlimited) {
               Promise.all([this.fetchData(false, true), this.fetchResourceAttrs()]);
             } else {
-              this.setSelectList(this.defaultList);
+              this.setScopeInstanceList(this.defaultList);
+              this.setScopeAttrList(this.defaultAttrList);
             }
           } else {
             window.changeAlert = this.pageChangeAlertMemo;
@@ -357,10 +360,13 @@
           if (Object.keys(value).length) {
             const { isNoLimited } = value;
             // isNoLimited代表是否是无限制，无限制则需要
-            [this.notLimitValue, this.isHide] = [isNoLimited, isNoLimited];
             if (isNoLimited) {
               this.handleClear();
             }
+            if (isNoLimited === this.notLimitValue) {
+              window.changeAlert = false;
+            }
+            [this.notLimitValue, this.isHide] = [isNoLimited, isNoLimited];
             this.$emit('on-init', false);
           }
         },
@@ -419,8 +425,7 @@
       // 获取资源属性
       async fetchResourceAttrs () {
         try {
-          // const { data } = await this.$store.dispatch('permApply/getResourceAttrs', this.attributeParams);
-          const { data } = await firstAttrData;
+          const { data } = await this.$store.dispatch('permApply/getResourceAttrs', this.attributeParams) || await firstAttrData;
           this.attributesList = [...data.results || []];
         } catch (e) {
           this.messageAdvancedError(e);
@@ -436,7 +441,7 @@
             }
           );
           // 判断是否是任意
-          this.isAny = data && data.some((item) => item.id === '*');
+          this.isAny = data && (!data.length || data.some((item) => item.id === '*'));
           if (this.params.actionsId && data.length) {
             const curActions = data.filter((item) =>
               this.params.actionsId.includes(item.id)
@@ -459,13 +464,10 @@
       },
 
       async handleScroll (event) {
-        if (this.isScrollBottom || this.isHasDefaultData) {
+        if (this.isScrollBottom || !this.isAny || this.isUnlimited) {
           return;
         }
-        if (
-          event.target.scrollTop + event.target.offsetHeight
-          >= event.target.scrollHeight - 5
-        ) {
+        if (event.target.scrollTop + event.target.offsetHeight >= event.target.scrollHeight - 5) {
           window.changeAlert = true;
           ++this.pagination.current;
           if (this.pagination.current <= this.pagination.totalPage) {
@@ -481,17 +483,18 @@
               type: this.params.id
             };
             try {
-              const res = await this.$store.dispatch(
+              const { data } = await this.$store.dispatch(
                 'permApply/getResources',
                 params
               );
+              const results = [...data.results || []];
               this.pagination.totalPage = Math.ceil(
-                res.data.count / this.pagination.limit
+                data.count / this.pagination.limit
               );
-              (res.data.results || []).forEach((item) => {
+              results.forEach((item) => {
                 item.checked = this.curSelectedIds.includes(item.id);
               });
-              this.selectList.push(...(res.data.results || []));
+              this.selectList.push(...results);
             } catch (e) {
               this.messageAdvancedError(e);
             } finally {
@@ -524,17 +527,19 @@
         this.fetchData(false, true);
       },
 
-      async setSelectList (payload) {
-        const setData = async () => {
-          return new Promise((resolve, reject) => {
-            setTimeout(() => {
-              resolve(payload);
-            }, 300);
+      async setAuthScopeData (payload) {
+        return new Promise((resolve) => {
+          sleep(300).then(() => {
+            resolve(payload);
           });
-        };
+        });
+      },
+
+      // 设置授权范围内的实例数据
+      async setScopeInstanceList (payload) {
         this.listLoading = true;
         try {
-          const res = await setData();
+          const res = await this.setAuthScopeData(payload);
           this.selectList = cloneDeep(res);
           this.selectList.forEach((item) => {
             item.checked = this.curSelectedIds.includes(item.id);
@@ -544,6 +549,17 @@
         } finally {
           this.listLoading = false;
         }
+      },
+
+      // 设置授权范围内的属性数据
+      async setScopeAttrList (payload) {
+        const res = await this.setAuthScopeData(payload);
+        this.attributesList = res.map((item) => {
+          return {
+            id: item.id,
+            display_name: item.name
+          };
+        });
       },
 
       handleLimitChange (newVal) {
@@ -569,7 +585,7 @@
             (item) => item.display_name.indexOf(this.searchValue) > -1
           );
         }
-        this.setSelectList(templateList);
+        this.setScopeInstanceList(templateList);
       },
 
       handleClear () {
@@ -667,7 +683,6 @@
         this.curSelectedList = [];
         this.selectList = [];
         this.attributesList = [];
-        this.conditionData.attribute = [];
         this.isScrollBottom = false;
       },
 
@@ -715,10 +730,9 @@
 </script>
 
 <style lang="postcss" scoped>
-.iam-aggregate-resource-sideslider-cls {
+.iam-aggregate-resource-slider-cls {
   .content {
     padding: 20px 25px;
-    height: calc(100vh - 114px);
   }
   .select-wrapper {
     width: 100%;
@@ -727,7 +741,7 @@
     justify-self: start;
     border-top: 1px solid #dcdee5;
   }
-  .no-limited-wrapper,
+  /deep/ .no-limited-wrapper,
   /deep/ .no-aggregate-wrapper {
     width: 100%;
     height: 42px;
@@ -736,13 +750,14 @@
     color: #63656e;
     background-color: #fafbfd;
     border: 1px solid #dcdee5;
-    padding: 0 21px 0 13px;
+    padding: 0 10px;
     &-left {
       max-width: calc(100% - 100px);
     }
     &-right {
       .no-limit-checkbox {
-        /deep/ .bk-checkbox-text {
+        font-size: 12px;
+        .bk-checkbox-text {
           font-size: 12px;
         }
       }
@@ -879,11 +894,12 @@
 }
   /deep/ .bk-sideslider-footer {
     background-color: #ffffff !important;
-    border-color: #dcdee5 !important;
     .aggregate-footer {
       margin-left: 25px;
       line-height: 48px;
+      font-size: 0;
       .bk-button {
+        min-width: 88px;
         margin-right: 8px;
       }
     }

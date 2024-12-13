@@ -153,10 +153,6 @@
         this.$emit('on-mouseleave');
       },
 
-      handleRestore () {
-        this.$emit('on-restore');
-      },
-
       async handlePaste () {
         // 无限制时无需请求接口
         if (Object.keys(this.params).length < 1) {

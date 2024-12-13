@@ -161,12 +161,11 @@
         <ExceptionEmpty />
       </div>
     </div>
-    <div slot="footer" style="padding-left: 30px;">
-      <bk-button theme="primary" :disabled="isDisabled" @click="handleSubmit"
-        data-test-id="grading_btn_addActionConfirm">
+    <div slot="footer" class="add-action-slider-footer">
+      <bk-button theme="primary" :disabled="isDisabled" @click="handleSubmit">
         {{ $t(`m.common['确定']`) }}
       </bk-button>
-      <bk-button style="margin-left: 10px;" @click="handleCancel('cancel')">{{ $t(`m.common['取消']`) }}</bk-button>
+      <bk-button @click="handleCancel('cancel')">{{ $t(`m.common['取消']`) }}</bk-button>
     </div>
   </bk-sideslider>
 </template>

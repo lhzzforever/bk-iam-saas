@@ -821,9 +821,8 @@ export function getCopyValue (value) {
 }
 
 /**
- * 复制传入的字符集
+ * 获取根路径
  * @param {subPath} value 传入的路径
- * @return {values} 返回根路径拼接当前路径
  */
 export const getRoutePath = (subPath) => {
   const path = subPath.startsWith('/') ? subPath.slice(1) : subPath;
@@ -851,3 +850,39 @@ export const navDocCenterPath = (versionLog, path, autoOpen = true) => {
     return curPath;
   }
 };
+
+/**
+ * 根据generateKey字段进行分组
+ * @param {Array} arr 源数组
+ * @param {String | Function} generateKey 指定的分组key
+ */
+export function getGroupByField (arr, generateKey) {
+  if (typeof generateKey === 'string') {
+    const propName = generateKey;
+    generateKey = (item) => item[propName];
+  }
+  const result = {};
+  for (const item of arr) {
+    const key = generateKey(item);
+    if (!result[key]) {
+      result[key] = [];
+    }
+    result[key].push(item);
+  }
+  return result;
+}
+
+/**
+ * 根据generateKey字段查找两个对象数组的交集
+ * @param {Array} sourceArr 源数组
+ * @param {Array} targetArr 目标数组
+ * @param {String | Function} generateKey 指定的唯一标识
+ */
+export function getIntersectionByField (generateKey, sourceArr, targetArr) {
+  if (typeof generateKey === 'string') {
+    const propName = generateKey;
+    generateKey = (item) => item[propName];
+  }
+  const sourceMap = new Map(sourceArr.map(item => [generateKey(item), item]));
+  return targetArr.filter(item => sourceMap.has(generateKey(item))).map(item => sourceMap.get(generateKey(item)));
+}

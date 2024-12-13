@@ -68,12 +68,9 @@ export default class GroupAggregationPolicy {
   }
 
   get empty () {
-    const isEmpty = this.attributes.length < 1 && this.instances.length < 1;
+    const isEmpty = this.attributes.length < 1 && (!this.instances.length || (this.instances.length === 1 && this.instances[0] === 'none'));
     if (this.isNeedNoLimited) {
-      if (isEmpty || ((this.instances.length === 1 && this.instances[0] === 'none') && this.attributes.length < 1)) {
-        return true;
-      }
-      return false;
+      return isEmpty && !this.isNoLimited;
     } else {
       return isEmpty;
     }
@@ -83,7 +80,7 @@ export default class GroupAggregationPolicy {
     if (this.empty) {
       return il8n('verify', '请选择');
     }
-    if ((this.isNoLimited || (!this.empty && !['add'].includes(this.tag)))) {
+    if (this.isNoLimited || (!this.empty && !['add'].includes(this.tag))) {
       return il8n('common', '无限制');
     }
     let instanceStr = '';

@@ -176,9 +176,9 @@
         <ExceptionEmpty />
       </div>
     </div>
-    <div slot="footer" style="padding-left: 30px;">
+    <div slot="footer" class="add-action-slider-footer">
       <bk-button theme="primary" @click="handleSubmit">{{ $t(`m.common['确定']`) }}</bk-button>
-      <bk-button style="margin-left: 10px;" @click="handleCancel('cancel')">{{ $t(`m.common['取消']`) }}</bk-button>
+      <bk-button @click="handleCancel('cancel')">{{ $t(`m.common['取消']`) }}</bk-button>
     </div>
   </bk-sideslider>
 </template>

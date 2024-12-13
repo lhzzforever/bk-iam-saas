@@ -8,7 +8,7 @@
     display: flex;
     justify-content: flex-start;
     position: relative;
-    min-height: calc(100vh - 114px);
+    min-height: calc(100vh - 100px);
     .left-wrapper {
       position: relative;
       flex: 0 0 240px;
@@ -250,6 +250,14 @@
           width: 120px;
         }
       }
+    }
+  }
+  .add-action-slider-footer {
+    padding: 0 30px;
+    font-size: 0;
+    .bk-button {
+      min-width: 88px;
+      margin-right: 8px;
     }
   }
 }

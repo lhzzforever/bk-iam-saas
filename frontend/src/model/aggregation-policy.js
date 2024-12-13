@@ -81,7 +81,7 @@ export default class AggregationPolicy {
     if (this.empty) {
       return il8n('verify', '请选择');
     }
-    if ((this.isNoLimited || (!this.empty && !['add'].includes(this.tag)))) {
+    if (this.isNoLimited || (!this.empty && !['add'].includes(this.tag))) {
       return il8n('common', '无限制');
     }
     let instanceStr = '';

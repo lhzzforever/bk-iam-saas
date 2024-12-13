@@ -157,10 +157,6 @@
         this.$emit('on-mouseleave');
       },
 
-      handleRestore () {
-        this.$emit('on-restore');
-      },
-
       handleClick () {
         if (this.isDisabled) {
           return;

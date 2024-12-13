@@ -90,10 +90,17 @@
               <div class="relation-content-wrapper" v-if="!!row.isAggregate">
                 <label class="resource-type-name" v-if="row.aggregateResourceType.length === 1">{{ row.aggregateResourceType[0].name }}</label>
                 <div class="bk-button-group tab-button" v-else>
-                  <bk-button v-for="(item, index) in row.aggregateResourceType"
-                    :key="item.id" @click="selectResourceType(row, index)"
-                    :class="row.selectedIndex === index ? 'is-selected' : ''" size="small">{{item.name}}
-                    <span v-if="!row.isNoLimited && row.instancesDisplayData[item.id] && row.instancesDisplayData[item.id].length">({{row.instancesDisplayData[item.id].length}})</span>
+                  <bk-button
+                    size="small"
+                    v-for="(item, index) in row.aggregateResourceType"
+                    :key="item.id"
+                    :class="[{ 'is-selected': row.selectedIndex === index }]"
+                    @click="selectResourceType(row, index)"
+                  >
+                    {{item.name}}
+                    <template v-if="!row.isNoLimited && formatDisplayResourceTotal(row, item.id) > 0">
+                      <span>({{ formatDisplayResourceTotal(row, item.id) }})</span>
+                    </template>
                   </bk-button>
                 </div>
                 <div class="content">
@@ -140,7 +147,6 @@
                           @on-mouseover="handlerConditionMouseover(content)"
                           @on-mouseleave="handlerConditionMouseleave(content)"
                           @on-view="handlerOnView(row, content, contentIndex, groIndex)"
-                          @on-restore="handlerOnRestore(content)"
                           @on-copy="handlerOnCopy(content, $index, contentIndex, row)"
                           @on-paste="handlerOnPaste(...arguments, content, $index, contentIndex)"
                           @on-batch-paste="handlerOnBatchPaste(...arguments, content, $index, contentIndex)"
@@ -219,19 +225,20 @@
 
     <render-aggregate-sideslider
       ref="aggregateRef"
-      :show.sync="isShowAggregateSideslider"
+      :show.sync="isShowAggregateSideSlider"
       :params="aggregateResourceParams"
       :is-super-manager="isSuperManager"
       :value="aggregateValue"
       :attr-value="aggregateAttrValue"
       :default-list="defaultSelectList"
+      :default-attr-list="defaultAttrList"
       :is-aggregate-empty-message="isAggregateEmptyMessage"
       @on-selected="handlerSelectAggregateRes"
     />
 
     <bk-sideslider
-      :is-show.sync="isShowSideslider"
-      :title="sidesliderTitle"
+      :is-show.sync="isShowSideSlider"
+      :title="sideSliderTitle"
       :width="sliderWidth"
       :quick-close="true"
       @animation-end="handleAnimationEnd">
@@ -251,13 +258,14 @@
 </template>
 
 <script>
-  import _ from 'lodash';
   import { mapGetters } from 'vuex';
+  import { leaveConfirm } from '@/common/leave-confirm';
+  import { CUSTOM_PERM_TEMPLATE_ID, PERMANENT_TIMESTAMP } from '@/common/constants';
+  import { getGroupByField, getIntersectionByField } from '@/common/util';
+  import { cloneDeep, uniqWith, isEqual } from 'lodash';
   import Condition from '@/model/condition';
   import GroupPolicy from '@/model/group-policy';
   import RenderAggregateSideslider from '@/components/choose-ip/sideslider';
-  import { leaveConfirm } from '@/common/leave-confirm';
-  import { CUSTOM_PERM_TEMPLATE_ID, PERMANENT_TIMESTAMP } from '@/common/constants';
   import RenderResource from './render-resource';
   import RenderCondition from './render-condition';
   import PreviewResourceDialog from './preview-resource-dialog';
@@ -364,17 +372,19 @@
         curId: '',
         isLoading: false,
         curScopeAction: {},
-        isShowAggregateSideslider: false,
+        isShowAggregateSideSlider: false,
         aggregateResourceParams: {},
         aggregateIndex: -1,
         aggregateValue: [],
         aggregateAttrValue: [],
         // 当前复制的数据形态: normal: 普通; aggregate: 聚合后
         curCopyMode: 'normal',
+        curCopyKey: '',
         curAggregateResourceType: {},
         defaultSelectList: [],
-        sidesliderTitle: '',
-        isShowSideslider: false,
+        defaultAttrList: [],
+        sideSliderTitle: '',
+        isShowSideSlider: false,
         previewData: [],
         curCopyParams: {},
         sliderLoading: false,
@@ -394,144 +404,125 @@
       };
     },
     computed: {
-        ...mapGetters(['user']),
-        isSuperManager () {
-            return this.user.role.type === 'super_manager';
-        },
-        sliderWidth () {
-            return this.mode === 'detail' ? 960 : 640;
-        },
-        condition () {
-            if (this.curIndex === -1 || this.curResIndex === -1 || this.curGroupIndex === -1) {
-                return [];
-            }
-            const curData = this.tableList[this.curIndex].resource_groups[this.curGroupIndex]
-                .related_resource_types[this.curResIndex];
-            if (!curData) {
-                return [];
-            }
-            return _.cloneDeep(curData.condition);
-        },
-        originalCondition () {
-            if (this.curIndex === -1
-                || this.curResIndex === -1
-                || this.curGroupIndex === -1
-                || this.originalList.length < 1) {
-                return [];
-            }
-            const curId = this.tableList[this.curIndex].id;
-            const curType = this.tableList[this.curIndex].resource_groups[this.curGroupIndex]
-                .related_resource_types[this.curResIndex].type;
-            if (!this.originalList.some(item => item.id === curId)) {
-                return [];
-            }
-            const curResTypeData = this.originalList.find(item => item.id === curId);
-            if (!curResTypeData.resource_groups[this.curGroupIndex]
-                .related_resource_types.some(item => item.type === curType)) {
-                return [];
-            }
-            const curData = (curResTypeData.resource_groups[this.curGroupIndex]
-                .related_resource_types || []).find(item => item.type === curType);
-            if (!curData) {
-                return [];
-            }
-            return _.cloneDeep(curData.condition);
-        },
-        curDisabled () {
-            if (this.curIndex === -1 || this.curResIndex === -1 || this.curGroupIndex === -1) {
-                return false;
-            }
-            const curData = this.tableList[this.curIndex].resource_groups[this.curGroupIndex]
-                .related_resource_types[this.curResIndex];
-            return curData.isDefaultLimit;
-        },
-        curFlag () {
-            if (this.curIndex === -1 || this.curResIndex === -1 || this.curGroupIndex === -1) {
-                return 'add';
-            }
-            const curData = this.tableList[this.curIndex].resource_groups[this.curGroupIndex]
-                .related_resource_types[this.curResIndex];
-            return curData.flag;
-        },
-        curSelectionMode () {
-            if (this.curIndex === -1 || this.curResIndex === -1 || this.curGroupIndex === -1) {
-                return 'all';
-            }
-            const curData = this.tableList[this.curIndex].resource_groups[this.curGroupIndex]
-                .related_resource_types[this.curResIndex];
-            return curData.selectionMode;
-        },
-        isShowView () {
-            return (payload) => {
-                return !payload.isEmpty;
-            };
-        },
-        isCreateMode () {
-            return this.mode === 'create';
-        },
-        isUserGroupDetail () {
-            return this.$route.name === 'userGroupDetail';
-        },
-        curSelectionCondition () {
-            if (this.curIndex === -1) {
-                return false;
-            }
-            const curSelectionCondition = this.tableList[this.curIndex].conditionIds;
-            return curSelectionCondition;
-        },
-        // 处理无限制和聚合后多个tab数据结构不兼容情况
-        formatDisplayValue () {
-          return (payload) => {
-            const { isNoLimited, empty, value, aggregateResourceType, selectedIndex } = payload;
-            if (value && aggregateResourceType[selectedIndex]) {
-              let displayValue = aggregateResourceType[selectedIndex].displayValue;
-              if (isNoLimited || empty) {
-                displayValue = value;
-              }
-              return displayValue;
-            }
-          };
+      ...mapGetters(['user']),
+      isSuperManager () {
+        return this.user.role.type === 'super_manager';
+      },
+      sliderWidth () {
+        return this.mode === 'detail' ? 960 : 640;
+      },
+      condition () {
+        if (this.curIndex === -1 || this.curResIndex === -1 || this.curGroupIndex === -1) {
+          return [];
         }
+        const curData = this.tableList[this.curIndex].resource_groups[this.curGroupIndex]
+            .related_resource_types[this.curResIndex];
+        if (!curData) {
+          return [];
+        }
+        return cloneDeep(curData.condition);
+      },
+      originalCondition () {
+        if (this.curIndex === -1
+            || this.curResIndex === -1
+            || this.curGroupIndex === -1
+            || this.originalList.length < 1
+          ) {
+          return [];
+        }
+        const curId = this.tableList[this.curIndex].id;
+        const curType = this.tableList[this.curIndex].resource_groups[this.curGroupIndex]
+          .related_resource_types[this.curResIndex].type;
+        if (!this.originalList.some(item => item.id === curId)) {
+          return [];
+        }
+        const curResTypeData = this.originalList.find(item => item.id === curId);
+        if (!curResTypeData.resource_groups[this.curGroupIndex]
+            .related_resource_types.some(item => item.type === curType)) {
+          return [];
+        }
+        const curData = (curResTypeData.resource_groups[this.curGroupIndex]
+          .related_resource_types || []).find(item => item.type === curType);
+        if (!curData) {
+          return [];
+        }
+        return cloneDeep(curData.condition);
+      },
+      curDisabled () {
+        if (this.curIndex === -1 || this.curResIndex === -1 || this.curGroupIndex === -1) {
+          return false;
+        }
+        const curData = this.tableList[this.curIndex].resource_groups[this.curGroupIndex]
+          .related_resource_types[this.curResIndex];
+        return curData.isDefaultLimit;
+      },
+      curFlag () {
+        if (this.curIndex === -1 || this.curResIndex === -1 || this.curGroupIndex === -1) {
+          return 'add';
+        }
+        const curData = this.tableList[this.curIndex].resource_groups[this.curGroupIndex]
+          .related_resource_types[this.curResIndex];
+        return curData.flag;
+      },
+      curSelectionMode () {
+        if (this.curIndex === -1 || this.curResIndex === -1 || this.curGroupIndex === -1) {
+              return 'all';
+        }
+        const curData = this.tableList[this.curIndex].resource_groups[this.curGroupIndex]
+          .related_resource_types[this.curResIndex];
+        return curData.selectionMode;
+      },
+      isShowView () {
+        return (payload) => {
+          return !payload.isEmpty;
+        };
+      },
+      isCreateMode () {
+        return this.mode === 'create';
+      },
+      isUserGroupDetail () {
+        return this.$route.name === 'userGroupDetail';
+      },
+      curSelectionCondition () {
+        if (this.curIndex === -1) {
+            return false;
+        }
+        const curSelectionCondition = this.tableList[this.curIndex].conditionIds;
+        return curSelectionCondition;
+      },
+      // 处理无限制和聚合后多个tab数据结构不兼容情况
+      formatDisplayValue () {
+        return (payload) => {
+          const { isNoLimited, empty, value, aggregateResourceType, selectedIndex } = payload;
+          if (value && aggregateResourceType[selectedIndex]) {
+            let displayValue = aggregateResourceType[selectedIndex].displayValue;
+            if (isNoLimited || empty) {
+              displayValue = value;
+            }
+            return displayValue;
+          }
+        };
+      },
+      formatDisplayResourceTotal () {
+        return (payload, resourceId) => {
+          let result = 0;
+          const { attributesDisplayData, instancesDisplayData } = payload;
+          const hasInstance = instancesDisplayData[resourceId] && instancesDisplayData[resourceId].length > 0;
+          const hasAttribute = attributesDisplayData[resourceId] && attributesDisplayData[resourceId].length > 0;
+          if (hasInstance) {
+            result += instancesDisplayData[resourceId].length;
+          }
+          if (hasAttribute) {
+            result += attributesDisplayData[resourceId].length;
+          }
+          return result;
+        };
+      }
     },
     watch: {
       list: {
         handler (value) {
-          // if (this.isAllExpanded) {
-          //     this.tableList = value.filter(e =>
-          //         (e.resource_groups && e.resource_groups.length)
-          //         || e.isAggregate);
-          //     this.emptyResourceGroupsList = value.filter(e =>
-          //         e.resource_groups && !e.resource_groups.length);
-          //     let emptyGroupsIdList = this.emptyResourceGroupsList.map(e => e.judgeId) || [];
-          //     emptyGroupsIdList = [...new Set(emptyGroupsIdList)];
-          //     console.log('emptyGroupsIdList', emptyGroupsIdList);
-          //     emptyGroupsIdList.forEach((item, index) => {
-          //         console.log('this.emptyResourceGroupsList', this.emptyResourceGroupsList);
-          //         this.emptyResourceGroupsName = (this.emptyResourceGroupsList || [])
-          //             .filter(data => data.judgeId === item)
-          //             .reduce((p, e) => {
-          //                 p.push(e.name);
-          //                 return p;
-          //             }, []);
-          //         console.log('this.emptyResourceGroupsName', this.emptyResourceGroupsName);
-          //         if (this.emptyResourceGroupsName.length) {
-          //             this.$nextTick(() => {
-          //                 this.emptyResourceGroupsList[index].name = this.emptyResourceGroupsName.join('，');
-          //                 this.emptyResourceGroupsTableList = this.emptyResourceGroupsList[index];
-          //                 this.tableList.unshift(this.emptyResourceGroupsTableList);
-          //                 console.log('this.tableList', this.tableList);
-          //             });
-          //         }
-          //     });
-          // } else {
-          //     value.forEach(e => {
-          //         e.name = e.name.split('，')[0];
-          //     });
-          //     this.emptyResourceGroupsList = []; // 重置变量
-          //     value = _.uniqWith(value, _.isEqual); // 去重
-          //     this.tableList.splice(0, this.tableList.length, ...value);
-          // }
-          value = _.uniqWith(value, _.isEqual); // 去重
+          value = uniqWith(value, isEqual); // 去重
           this.isExpandTable = value.length > 0;
           if (this.isAllExpanded) {
             this.tableList.splice(0, this.tableList.length, ...value);
@@ -559,6 +550,7 @@
             this.curCopyMode = 'normal';
             this.curAggregateResourceType = {};
             this.defaultSelectList = [];
+            this.defaultAttrList = [];
           }
         },
         immediate: true
@@ -736,65 +728,101 @@
             }
           });
         }
-        this.previewData = _.cloneDeep(params);
-        this.sidesliderTitle = this.$t(`m.info['操作侧边栏操作的资源实例']`, { value: `${this.$t(`m.common['【']`)}${payload.name}${this.$t(`m.common['】']`)}` });
-        this.isShowSideslider = true;
+        this.previewData = cloneDeep(params);
+        this.sideSliderTitle = this.$t(`m.info['操作侧边栏操作的资源实例']`, { value: `${this.$t(`m.common['【']`)}${payload.name}${this.$t(`m.common['】']`)}` });
+        this.isShowSideSlider = true;
       },
       handleAnimationEnd () {
-        this.sidesliderTitle = '';
+        this.sideSliderTitle = '';
         this.previewData = [];
         this.curId = '';
       },
       handlerAggregateConditionMouseover (payload) {
-        if (this.curCopyData[0] === 'none') {
+        if (this.curCopyData[0] === 'none' && !this.curCopyAttrData.length) {
           return;
         }
         if (this.curCopyKey === `${payload.aggregateResourceType.system_id}${payload.aggregateResourceType.id}`) {
           payload.canPaste = true;
         }
       },
+      getResourceCondition (item) {
+        const resourceGroups = item.resource_groups || [];
+        const result = resourceGroups.length > 0
+          && resourceGroups[0].related_resource_types.length > 0
+          && resourceGroups[0].related_resource_types[0].condition;
+        return result || [];
+      },
       getScopeActionResource (payload, id, systemId) {
-        const scopeAction = this.authorization[systemId];
-        // eslint-disable-next-line max-len
-        const actions = (scopeAction && scopeAction.filter(item => payload.map(_ => _.id).includes(item.id))) || [];
-        const conditions = actions.map(
-          item => item.resource_groups[0].related_resource_types[0].condition
-        ).filter(_ => _.length > 0);
-        if (conditions.length < 1) {
+        const scopeAction = this.authorization[systemId] || [];
+        const actions = scopeAction.filter(item => payload.map(_ => _.id).includes(item.id));
+        const conditions = actions.map(item => this.getResourceCondition(item)).filter(_ => _.length > 0);
+        if (!conditions.length) {
           return [];
         }
         const instances = actions.map(item => {
-          const instancesItem = item.resource_groups[0].related_resource_types[0].condition[0]
-            && item.resource_groups[0].related_resource_types[0].condition[0].instances;
-          return (instancesItem && instancesItem.filter(e => e.type === id)) || [];
+          if (this.getResourceCondition(item).length) {
+            const curCondition = this.getResourceCondition(item)[0];
+            return (curCondition.instances && curCondition.instances.filter(v => v.type === id)) || [];
+          }
+        });
+        const attributes = actions.map(item => {
+          if (this.getResourceCondition(item).length) {
+            const curCondition = this.getResourceCondition(item)[0];
+            return (curCondition.attributes && curCondition.attributes.filter(v => v.type === id)) || [];
+          }
         });
         const tempData = [];
-        const resources = instances.map(item => item[0]
-          && item[0].path).map(item => item && item.map(v => v.map(_ => _.id))).filter(item => item !== undefined);
+        const attrData = [];
+        const resources = instances
+          .map(item => item[0] && item[0].path)
+          .map(item => item && item.map(v => v.map(_ => _.id)))
+          .filter(item => item !== undefined);
         let resourceList = instances
           .map(item => item[0] && item[0].path)
           .map(item => item && item.map(v => v.map(({ id, name }) => ({ id, name }))))
-          .flat(2);
+          .flat(Infinity);
         resourceList = resourceList.filter(item => item !== undefined);
         resources.forEach(item => {
           item && item.forEach(subItem => {
-            const hasIntersectionResource = resources.every(v => v && v.some(vItem => vItem[0] === subItem[0]));
-            const hasResource = resources.find(v => v && v.some(vItem => vItem[0] === subItem[0]));
+            const hasIntersectionResource = resources.every((v) =>
+              v && v.some(vItem => vItem[0] === subItem[0])
+            );
             if (hasIntersectionResource) {
               tempData.push(subItem[0]);
             }
-            // 判断处理没有交集的情况
-            if (!hasIntersectionResource && hasResource) {
-              this.isAggregateEmptyMessage = true;
+          });
+        });
+        // 判断属性条件如果存在空数据，则交集为空
+        const isExistAttrEmpty = attributes.some((v) => !v.length);
+        // 获取属性条件之间交集数据
+        attributes.forEach(item => {
+          item && item.forEach(v => {
+            const curValue = `${v.id}&${v.name}&${v.type}`;
+            const hasIntersectionResource = attributes.every((subItem) => {
+              return subItem && subItem.some(vItem => `${vItem.id}&${vItem.name}&${vItem.type}` === curValue);
+            });
+            // 如果外层有交集，再取子集values不相同的数据
+            if (hasIntersectionResource) {
+              const childValues = v.values && v.values.map((p) => `${p.id}&${p.name}`);
+              const childChain = attrData.find(k =>
+                `${k.id}&${k.name}&${k.type}&${k.values.map((p) => `${p.id}&${p.name}`).join()}` === `${curValue}&${childValues.join()}`
+              );
+              if (!childChain) {
+                attrData.push(v);
+              }
             }
           });
         });
-        if (instances.length !== actions.length) {
+        if ((instances.length !== actions.length) && (isExistAttrEmpty || !attrData.length)) {
+          this.isAggregateEmptyMessage = true;
           return [];
         }
         const curResource = [...new Set(tempData)];
-        const isEqual = curResource.length > 0;
-        if (isEqual) {
+        const isEqualInstance = curResource.length > 0;
+        let instancesList = [];
+        let attributesList = [];
+        // 格式化实例数据结构
+        if (isEqualInstance) {
           const curResourceList = [];
           resourceList.forEach(item => {
             if (!curResourceList.find(subItem => subItem.id === item.id)) {
@@ -804,30 +832,69 @@
               });
             }
           });
-          return curResourceList.filter(item => curResource.includes(item.id));
+          instancesList = curResourceList.filter(item => curResource.includes(item.id));
         }
+        // 格式化属性条件数据结构
+        if (attrData.length > 0 && !isExistAttrEmpty) {
+          // 根据相同父级数据进行分组
+          const groupFieldData = getGroupByField(attrData, (item) => `${item.id}&${item.name}&${item.type}`);
+          attrData.forEach(item => {
+            const curData = `${item.id}&${item.name}&${item.type}`;
+            if (groupFieldData[curData]) {
+              groupFieldData[curData].forEach((v, i) => {
+                const nextNode = groupFieldData[curData][i + 1];
+                const nextData = nextNode ? nextNode.values : v.values;
+                // 遍历多个子集对象数组取交集
+                const results = getIntersectionByField((k) => `${k.id}&${k.name}`, v.values, nextData);
+                v.values = [...results || []];
+                v.selecteds = v.values.map((k) => k.id);
+                if (nextNode) {
+                  nextNode.values = [...results || []];
+                  nextNode.selecteds = v.values.map((k) => k.id);
+                }
+              });
+              groupFieldData[curData] = uniqWith(groupFieldData[curData], isEqual);
+            }
+          });
+          attributesList = uniqWith(attrData, isEqual);
+        }
+        // 如果存在实例或者属性则返回格式化后数据
+        if (!!instancesList.length || !!attributesList.length) {
+          return [{
+            instancesList,
+            attributesList
+          }];
+        }
+        this.isAggregateEmptyMessage = true;
         return [];
       },
       handlerAggregateConditionMouseleave (payload) {
         payload.canPaste = false;
       },
+
       handlerAggregateOnCopy (payload, index) {
         this.instanceKey = payload.aggregateResourceType[payload.selectedIndex].id;
         window.changeDialog = true;
         this.curCopyKey = `${payload.aggregateResourceType[payload.selectedIndex].system_id}${payload.aggregateResourceType[payload.selectedIndex].id}`;
         this.curAggregateResourceType = payload.aggregateResourceType[payload.selectedIndex];
-        this.curCopyData = _.cloneDeep(payload.instancesDisplayData[this.instanceKey]);
+        this.curCopyData = cloneDeep(payload.instancesDisplayData[this.instanceKey]);
+        this.curCopyAttrData = cloneDeep(payload.attributesDisplayData[this.instanceKey]);
         this.curCopyDataId = payload.aggregationId;
         this.curCopyMode = 'aggregate';
         this.showMessage(this.$t(`m.info['实例复制']`));
         this.$refs[`condition_${index}_aggregateRef`] && this.$refs[`condition_${index}_aggregateRef`].setImmediatelyShow(true);
       },
+
       handlerAggregateOnPaste (payload) {
         let tempInstances = [];
+        let tempAttributes = [];
         if (this.curCopyMode === 'aggregate') {
           tempInstances = this.curCopyData;
+          tempAttributes = this.curCopyAttrData;
         } else {
-          if (this.curCopyData[0] !== 'none') {
+          const hasInstance = this.curCopyData.length > 0 && this.curCopyData[0] !== 'none';
+          const hasAttribute = this.curCopyAttrData.length > 0;
+          if (hasInstance) {
             const instances = this.curCopyData.map(item => item.instance);
             const instanceData = instances[0][0];
             tempInstances = instanceData.path.map(pathItem => {
@@ -837,18 +904,42 @@
               };
             });
           }
+          if (hasAttribute) {
+            const { id } = this.curAggregateResourceType;
+            this.curCopyAttrData.forEach(v => {
+              const curItem = tempAttributes.find(_ => _.type === id);
+              if (curItem) {
+                tempAttributes.push(v);
+              } else {
+                tempAttributes.push({
+                  ...v,
+                  ...{
+                    type: id
+                  }
+                });
+              }
+            });
+          }
         }
-        if (tempInstances.length < 1) {
+        const isEmpty = !tempInstances.length && !tempAttributes.length;
+        if (isEmpty) {
           return;
         }
-        payload.instances = _.cloneDeep(tempInstances);
-        payload.isError = false;
+        payload = Object.assign(
+          payload,
+          {
+            instances: cloneDeep(tempInstances),
+            attributes: cloneDeep(tempAttributes),
+            isError: false
+          }
+        );
         this.showMessage(this.$t(`m.info['粘贴成功']`));
-        this.$emit('on-select', payload);
       },
+
       handlerAggregateOnBatchPaste (payload, index) {
         let tempCurData = ['none'];
-        let tempArrgegateData = [];
+        let tempArrAggregateData = [];
+        let tempAttrAggregateData = [];
         if (this.curCopyMode === 'normal') {
           if (this.curCopyData[0] !== 'none') {
             tempCurData = this.curCopyData.map(item => {
@@ -857,7 +948,7 @@
             });
             const instances = this.curCopyData.map(item => item.instance);
             const instanceData = instances[0][0];
-            tempArrgegateData = instanceData.path.map(pathItem => {
+            tempArrAggregateData = instanceData.path.map(pathItem => {
               return {
                 id: pathItem[0].id,
                 name: pathItem[0].name
@@ -865,7 +956,8 @@
             });
           }
         } else {
-          tempArrgegateData = this.curCopyData;
+          tempArrAggregateData = this.curCopyData;
+          tempAttrAggregateData = this.curCopyAttrData;
           const instances = (() => {
             const arr = [];
             const { id, name, system_id } = this.curAggregateResourceType;
@@ -895,8 +987,27 @@
             });
             return arr;
           })();
-          if (instances.length > 0) {
-            tempCurData = [new Condition({ instances }, '', 'add')];
+          const attributes = (() => {
+            const arr = [];
+            const { id } = this.curAggregateResourceType;
+            this.curCopyAttrData.forEach(v => {
+              const curItem = arr.find(_ => _.type === id);
+              if (curItem) {
+                arr.push(v);
+              } else {
+                arr.push({
+                  ...v,
+                  ...{
+                    type: id
+                  }
+                });
+              }
+            });
+            return arr;
+          })();
+          const isExistData = instances.length > 0 || attributes.length > 0;
+          if (isExistData) {
+            tempCurData = [new Condition({ instances, attributes }, '', 'add')];
           }
         }
         this.tableList.forEach(item => {
@@ -905,7 +1016,7 @@
               groupItem.related_resource_types
                 && groupItem.related_resource_types.forEach((subItem, subItemIndex) => {
                   if (`${subItem.system_id}${subItem.type}` === this.curCopyKey) {
-                    subItem.condition = _.cloneDeep(tempCurData);
+                    subItem.condition = cloneDeep(tempCurData);
                     subItem.isError = false;
                     this.$emit('on-resource-select', index, subItemIndex, subItem.condition);
                   }
@@ -916,26 +1027,27 @@
               const systemId = this.isSuperManager
                 ? aggregateResourceItem.system_id : item.system_id;
               if (`${systemId}${aggregateResourceItem.id}` === this.curCopyKey && this.curCopyDataId !== item.aggregationId) {
+                item.attributes = cloneDeep(tempAttrAggregateData);
+                item.instances = cloneDeep(tempArrAggregateData);
                 if (Object.keys(item.instancesDisplayData).length) {
-                  item.instancesDisplayData[this.instanceKey] = _.cloneDeep(tempArrgegateData);
+                  item.instancesDisplayData[this.instanceKey] = cloneDeep(tempArrAggregateData);
                   item.instances = this.setInstanceData(item.instancesDisplayData);
                 } else {
-                  item.instances = _.cloneDeep(tempArrgegateData);
                   this.setInstancesDisplayData(item);
+                }
+                // 处理聚合属性
+                if (Object.keys(item.attributesDisplayData).length) {
+                  item.attributesDisplayData[this.instanceKey] = cloneDeep(tempAttrAggregateData);
                 }
               }
             });
             item.isError = false;
             this.$emit('on-select', item);
-            // if (`${item.aggregateResourceType.system_id}${item.aggregateResourceType.id}` === this.curCopyKey) {
-            //     item.instances = _.cloneDeep(tempArrgegateData);
-            //     item.isError = false;
-            //     this.$emit('on-select', item);
-            // }
           }
         });
         payload.isError = false;
         this.curCopyData = ['none'];
+        this.curCopyAttrData = [];
         this.$refs[`condition_${index}_aggregateRef`] && this.$refs[`condition_${index}_aggregateRef`].setImmediatelyShow(false);
         this.showMessage(this.$t(`m.info['批量粘贴成功']`));
       },
@@ -963,7 +1075,7 @@
       },
 
       // 设置正常粘贴InstancesDisplayData
-      setNomalInstancesDisplayData (data, key) {
+      setNormalInstancesDisplayData (data, key) {
         data.instancesDisplayData[key] = data.instances.map(e => ({
           id: e.id,
           name: e.name
@@ -971,33 +1083,43 @@
       },
 
       showAggregateResourceInstance (data, index) {
-        window.changeDialog = true;
         const aggregateResourceParams = {
           ...data.aggregateResourceType[data.selectedIndex],
           curAggregateSystemId: data.system_id,
+          isNoLimited: data.isNoLimited || false,
           actionsId: data.actions.map((item) => item.id)
         };
-        this.selectedIndex = data.selectedIndex;
-        this.aggregateResourceParams = _.cloneDeep(aggregateResourceParams);
-        this.aggregateIndex = index;
         const instanceKey = data.aggregateResourceType[data.selectedIndex].id;
+        this.selectedIndex = data.selectedIndex;
+        this.aggregateIndex = index;
         this.instanceKey = instanceKey;
         if (!data.instancesDisplayData[instanceKey]) data.instancesDisplayData[instanceKey] = [];
         if (!data.attributesDisplayData[instanceKey]) data.attributesDisplayData[instanceKey] = [];
-        this.aggregateValue = _.cloneDeep(data.instancesDisplayData[instanceKey].map(item => {
+        this.aggregateResourceParams = cloneDeep(aggregateResourceParams);
+        this.aggregateValue = cloneDeep(data.instancesDisplayData[instanceKey].map(item => {
           return {
             id: item.id,
             display_name: item.name
           };
         }));
-        this.aggregateAttrValue = _.cloneDeep(data.attributesDisplayData[instanceKey] || []);
-        this.defaultSelectList = this.getScopeActionResource(
+        this.aggregateAttrValue = cloneDeep(data.attributesDisplayData[instanceKey] || []);
+        const results = this.getScopeActionResource(
           data.actions,
-          data.aggregateResourceType[data.selectedIndex].id,
+          instanceKey,
           data.system_id
         );
-        this.isShowAggregateSideslider = true;
+        window.changeDialog = results.length > 0;
+        this.isShowAggregateSideSlider = true;
+        if (!results.length) {
+          this.defaultSelectList = [];
+          this.defaultAttrList = [];
+          return;
+        }
+        const { attributesList, instancesList } = results[0];
+        this.defaultSelectList = [...instancesList];
+        this.defaultAttrList = [...attributesList];
       },
+
       showMessage (payload) {
         this.bkMessageInstance = this.$bkMessage({
           limit: 1,
@@ -1042,7 +1164,7 @@
             const { isTemplate, detail } = this.tableList[curIndex];
             const systemId = this.isCreateMode && detail ? detail.system.id : this.systemId;
             const scopeAction = this.authorization[systemId] || [];
-            const curScopeAction = _.cloneDeep(scopeAction.find((scopeItem) => scopeItem.id === item.id));
+            const curScopeAction = cloneDeep(scopeAction.find((scopeItem) => scopeItem.id === item.id));
             console.log(curScopeAction, '授权实例');
             // 如果有授权边界判断授权范围是否包含有关联实例
             if (curScopeAction && curScopeAction.resource_groups) {
@@ -1054,7 +1176,7 @@
                       const { instance, instances, attributes } = resource;
                       const resourceInstance = instance || instances;
                       scopeInstanceList = resourceInstance.map(item => item.path).flat(Infinity) || [];
-                      scopeAttributeList = _.cloneDeep(attributes);
+                      scopeAttributeList = cloneDeep(attributes);
                     });
                   }
                 });
@@ -1085,7 +1207,7 @@
                         // 因为path链路是多维数组且无法确定链路数量，所以这里需要过滤掉空数组
                         ins.path = ins.path.filter((p) => p && p.length > 0);
                         if (ins.paths) {
-                          ins.paths = _.cloneDeep(ins.path);
+                          ins.paths = cloneDeep(ins.path);
                         }
                       });
                       // 这里会存在path的内容不在授权范围内会被过滤掉，而path内容是必填项
@@ -1094,8 +1216,8 @@
                         && scopeAttributeList && scopeAttributeList.length > 0
                       ) {
                         const scopeAttrList = scopeAttributeList.map((scopeAttr) => `${scopeAttr.id}&${scopeAttr.name}`);
-                        const scopeAttrValues = scopeAttributeList.map((scopeAttr) => scopeAttr.values);
-                        resource.attributes = resource.attributes.filter((attr) => {
+                        const scopeAttrValues = scopeAttributeList.map((scopeAttr) => scopeAttr.values).flat(Infinity);
+                        resource.attributes.forEach((attr) => {
                           if (scopeAttrList.includes(`${attr.id}&${attr.name}`)) {
                             attr.values = attr.values.filter((k) => scopeAttrValues.map((p) => `${p.id}&${p.name}`).includes(`${k.id}&${k.name}`));
                           }
@@ -1160,7 +1282,7 @@
           await this.fetchAuthorizationScopeActions(this.params.system_id);
         }
         const scopeAction = this.authorization[this.params.system_id] || [];
-        this.curScopeAction = _.cloneDeep(scopeAction.find(item => item.id === data.id));
+        this.curScopeAction = cloneDeep(scopeAction.find(item => item.id === data.id));
         this.curIndex = index;
         this.curResIndex = resIndex;
         this.curGroupIndex = groupIndex;
@@ -1171,7 +1293,7 @@
       // 请求资源实例数据
       async handleMainActionSubmit (payload, relatedActions) {
         // debugger
-        const curPayload = _.cloneDeep(payload);
+        const curPayload = cloneDeep(payload);
         this.sliderLoading = true;
         curPayload.forEach(item => {
           item.instances = item.instance || [];
@@ -1179,8 +1301,8 @@
           delete item.instance;
           delete item.attribute;
         });
-        const tableList = _.cloneDeep(this.tableList);
-        const curData = _.cloneDeep(tableList[this.curIndex]);
+        const tableList = cloneDeep(this.tableList);
+        const curData = cloneDeep(tableList[this.curIndex]);
         // eslint-disable-next-line max-len
         curData.resource_groups[this.curGroupIndex].related_resource_types = [curData.resource_groups[this.curGroupIndex]
           .related_resource_types[this.curResIndex]];
@@ -1329,13 +1451,13 @@
       handlerOnCopy (payload, index, subIndex, action) {
         window.changeDialog = true;
         this.curCopyKey = `${payload.system_id}${payload.type}`;
-        this.curCopyData = _.cloneDeep(payload.condition);
+        this.curCopyData = cloneDeep(payload.condition);
         this.curCopyMode = 'normal';
-        this.curCopyParams = this.getBatchCopyParms(action, payload);
+        this.curCopyParams = this.getBatchCopyParams(action, payload);
         this.showMessage(this.$t(`m.info['实例复制']`));
         this.$refs[`condition_${index}_${subIndex}_ref`][0] && this.$refs[`condition_${index}_${subIndex}_ref`][0].setImmediatelyShow(true);
       },
-      getBatchCopyParms (payload, content) {
+      getBatchCopyParams (payload, content) {
         const actions = [];
         this.tableList.forEach(item => {
           if (!item.isAggregate) {
@@ -1414,16 +1536,15 @@
           if (tempCurData[0] === 'none') {
             return;
           }
-          content.condition = _.cloneDeep(tempCurData);
+          content.condition = cloneDeep(tempCurData);
         }
         content.isError = false;
         this.showMessage(this.$t(`m.info['粘贴成功']`));
-        this.$emit('on-resource-select', $index, contentIndex, content.condition);
       },
       handlerOnBatchPaste (payload, content, index, subIndex) {
-        // debugger
         let tempCurData = ['none'];
-        let tempArrgegateData = [];
+        let tempArrAggregateData = [];
+        let tempAttrAggregateData = [];
         if (this.curCopyMode === 'normal') {
           if (!payload.flag) {
             return;
@@ -1457,7 +1578,7 @@
                 });
                 const instances = this.curCopyData.map(item => item.instance);
                 const instanceData = instances[0][0];
-                tempArrgegateData = instanceData.path.map(pathItem => {
+                tempArrAggregateData = instanceData.path.map(pathItem => {
                   return {
                     id: pathItem[0].id,
                     name: pathItem[0].name
@@ -1479,7 +1600,7 @@
                 });
               } else {
                 if (`${item.aggregateResourceType[item.selectedIndex].system_id}${item.aggregateResourceType[item.selectedIndex].id}` === this.curCopyKey) {
-                  item.instances = _.cloneDeep(tempArrgegateData);
+                  item.instances = cloneDeep(tempArrAggregateData);
                   item.isError = false;
                   this.$emit('on-select', item);
                 }
@@ -1492,18 +1613,20 @@
                 if (curPasteData) {
                   const systemId = this.isCreateMode && item.detail ? item.detail.system.id : this.systemId;
                   const scopeAction = this.authorization[systemId] || [];
-                  // eslint-disable-next-line max-len
-                  const curScopeAction = _.cloneDeep(scopeAction.find(scopeItem => scopeItem.id === item.id));
-                  // eslint-disable-next-line max-len
+                  const curScopeAction = cloneDeep(scopeAction.find(scopeItem => scopeItem.id === item.id));
                   if (curScopeAction && curScopeAction.resource_groups && curScopeAction.resource_groups.length) {
                     curScopeAction.resource_groups.forEach(curScopeActionItem => {
                       curScopeActionItem.related_resource_types.forEach(curResItem => {
                         if (`${curResItem.system_id}${curResItem.type}` === `${curPasteData.resource_type.system_id}${curPasteData.resource_type.type}`) {
-                          // eslint-disable-next-line max-len
                           let canPasteName = [];
                           let hasConditionData = [];
                           let noConditionData = [];
-                          if (curResItem.condition && curResItem.condition.length) {
+                          const hasCurCondition = curResItem.condition && curResItem.condition.length > 0;
+                          if (
+                            hasCurCondition
+                            && curResItem.condition[0].instances
+                            && curResItem.condition[0].instances.length > 0
+                          ) {
                             hasConditionData = curResItem.condition[0].instances[0].path.reduce((p, v) => {
                               p.push(v[0].name);
                               return p;
@@ -1565,14 +1688,14 @@
                   }
                 }
               } else {
-                const scopeAction = _.cloneDeep(payload.data.find(_ => item.actions.map((v) => v.id).includes(_.id)));
+                const scopeAction = cloneDeep(payload.data.find(_ => item.actions.map((v) => v.id).includes(_.id)));
                 item.aggregateResourceType && item.aggregateResourceType.forEach(aggregateResourceItem => {
                   const systemId = this.isSuperManager
                     ? aggregateResourceItem.system_id : item.system_id;
                   if (`${systemId}${aggregateResourceItem.id}` === this.curCopyKey && scopeAction) {
-                    item.instances = _.cloneDeep(tempArrgegateData);
+                    item.instances = cloneDeep(tempArrAggregateData);
                     this.instanceKey = aggregateResourceItem.id;
-                    this.setNomalInstancesDisplayData(item, this.instanceKey);
+                    this.setNormalInstancesDisplayData(item, this.instanceKey);
                     this.instanceKey = ''; // 重置
                     item.isError = false;
                   }
@@ -1582,7 +1705,8 @@
             });
           }
         } else {
-          tempArrgegateData = this.curCopyData;
+          tempArrAggregateData = this.curCopyData;
+          tempAttrAggregateData = this.curCopyAttrData;
           const instances = (() => {
             const arr = [];
             const { id, name, system_id } = this.curAggregateResourceType;
@@ -1612,15 +1736,34 @@
             });
             return arr;
           })();
-          if (instances.length > 0) {
-            tempCurData = [new Condition({ instances }, '', 'add')];
+          const attributes = (() => {
+            const arr = [];
+            const { id } = this.curAggregateResourceType;
+            this.curCopyAttrData.forEach(v => {
+              const curItem = arr.find(_ => _.type === id);
+              if (curItem) {
+                arr.push(v);
+              } else {
+                arr.push({
+                  ...v,
+                  ...{
+                    type: id
+                  }
+                });
+              }
+            });
+            return arr;
+          })();
+          const isExistData = instances.length > 0 || attributes.length > 0;
+          if (isExistData) {
+            tempCurData = [new Condition({ instances, attributes }, '', 'add')];
           }
           this.tableList.forEach(item => {
             if (!item.isAggregate) {
               item.resource_groups.forEach(groupItem => {
                 groupItem.related_resource_types.forEach((subItem, subItemIndex) => {
                   if (`${subItem.system_id}${subItem.type}` === this.curCopyKey) {
-                    subItem.condition = _.cloneDeep(tempCurData);
+                    subItem.condition = cloneDeep(tempCurData);
                     subItem.isError = false;
                     this.$emit('on-resource-select', index, subItemIndex, subItem.condition);
                   }
@@ -1628,7 +1771,8 @@
               });
             } else {
               if (`${item.aggregateResourceType.system_id}${item.aggregateResourceType.id}` === this.curCopyKey) {
-                item.instances = _.cloneDeep(tempArrgegateData);
+                item.instances = cloneDeep(tempArrAggregateData);
+                item.attributes = cloneDeep(tempAttrAggregateData);
                 item.isError = false;
                 this.$emit('on-select', item);
               }
@@ -1638,6 +1782,7 @@
         content.isError = false;
         this.$refs[`condition_${index}_${subIndex}_ref`][0] && this.$refs[`condition_${index}_${subIndex}_ref`][0].setImmediatelyShow(false);
         this.curCopyData = ['none'];
+        this.curCopyAttrData = [];
         this.showMessage(this.$t(`m.info['批量粘贴成功']`));
       },
       handlePreviewDialogClose () {
@@ -1724,9 +1869,9 @@
                         const instanceList = (instance && instance.length > 0)
                           ? instance.map(({ name, type, path, paths }) => {
                             // 这里paths和path存在数据不同步问题，所以当paths为空时，需要判断path是否存在数据
-                            let tempPath = _.cloneDeep(paths);
+                            let tempPath = cloneDeep(paths);
                             if (!tempPath.length && path && path.length) {
-                              tempPath = _.cloneDeep(path);
+                              tempPath = cloneDeep(path);
                             }
                             tempPath.forEach(pathItem => {
                               pathItem.forEach(pathSubItem => {
@@ -1763,7 +1908,7 @@
                 });
               });
               // 强制刷新下
-              item.resource_groups = _.cloneDeep(item.resource_groups);
+              item.resource_groups = cloneDeep(item.resource_groups);
             }
             actionParam = {
               type,
@@ -1780,7 +1925,7 @@
               item.isError = true;
               flag = true;
             } else {
-              const temps = _.cloneDeep(actions);
+              const temps = cloneDeep(actions);
               temps.forEach(sub => {
                 sub.system_id = sub.detail.system.id;
               });
@@ -1870,9 +2015,9 @@
                         const instanceList = (instance && instance.length > 0)
                           ? instance.map(({ name, type, path, paths }) => {
                             // 这里paths和path存在数据不同步问题，所以当paths为空时，需要判断path是否存在数据
-                            let tempPath = _.cloneDeep(paths);
+                            let tempPath = cloneDeep(paths);
                             if (!tempPath.length && path && path.length) {
-                              tempPath = _.cloneDeep(path);
+                              tempPath = cloneDeep(path);
                             }
                             tempPath.forEach(pathItem => {
                               pathItem.forEach(pathSubItem => {
@@ -1910,7 +2055,7 @@
                 });
               });
               // 强制刷新下
-              item.resource_groups = _.cloneDeep(item.resource_groups);
+              item.resource_groups = cloneDeep(item.resource_groups);
             }
             const params = {
               type,
@@ -1920,7 +2065,7 @@
               resource_groups: groupResourceTypes,
               environment
             };
-            actionList.push(_.cloneDeep(params));
+            actionList.push(cloneDeep(params));
           } else {
             const { actions, aggregateResourceType, instances } = item;
             if (instances.length < 1) {
@@ -1997,9 +2142,9 @@
         
                         const instanceList = (instance && instance.length > 0)
                           ? instance.map(({ name, type, path, paths }) => {
-                            let tempPath = _.cloneDeep(paths);
+                            let tempPath = cloneDeep(paths);
                             if (!tempPath.length && path && path.length) {
-                              tempPath = _.cloneDeep(path);
+                              tempPath = cloneDeep(path);
                             }
                             tempPath.forEach(pathItem => {
                               pathItem.forEach(pathSubItem => {

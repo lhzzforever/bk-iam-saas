@@ -76,15 +76,6 @@
               <template v-else>
                 {{ $t(`m.common['无需关联实例']`) }}
               </template>
-              <Icon
-                type="detail-new"
-                class="view-icon"
-                :title="$t(`m.common['详情']`)"
-                v-if="isShowView(row)"
-                @click.stop="handleViewResource(row)" />
-              <template v-if="!isUserGroupDetail ? false : true && row.showDelete">
-                <Icon class="remove-icon" type="close-small" @click.stop="toHandleDelete(row)" />
-              </template>
             </template>
             <template v-else>
               <div class="relation-content-wrapper" v-if="!!row.isAggregate">
@@ -136,7 +127,6 @@
                       </div>
                       <div class="content">
                         <render-condition
-                          data-test-id="group_input_resourceInstanceCondition"
                           :ref="`condition_${$index}_${contentIndex}_ref`"
                           :value="content.value"
                           :is-empty="content.empty"
@@ -209,8 +199,7 @@
           @on-init="handleOnInit" />
       </div>
       <div slot="footer" style="margin-left: 25px;">
-        <bk-button theme="primary" :disabled="disabled" :loading="sliderLoading" @click="handleResourceSumit"
-          data-test-id="group_btn_resourceInstanceSubmit">
+        <bk-button theme="primary" :disabled="disabled" :loading="sliderLoading" @click="handleResourceSubmit">
           {{ $t(`m.common['保存']`) }}
         </bk-button>
         <bk-button style="margin-left: 10px;" :disabled="disabled" @click="handleResourceCancel('cancel')">{{ $t(`m.common['取消']`) }}</bk-button>
@@ -396,6 +385,8 @@
         selectedIndex: 0,
         instanceKey: '',
         curCopyDataId: '',
+        curSystemActions: [],
+        relatedActionsList: [],
         emptyResourceGroupsList: [],
         isExpandTable: false,
         isAggregateEmptyMessage: false,
@@ -813,7 +804,9 @@
             }
           });
         });
-        if ((instances.length !== actions.length) && (isExistAttrEmpty || !attrData.length)) {
+        // 如果instances数量与actions数量不一致，则代表聚合的操作有存在空的资源实例
+        const hasActionInstance = instances.filter((v) => v.length > 0);
+        if ((hasActionInstance.length !== actions.length) && (isExistAttrEmpty || !attrData.length)) {
           this.isAggregateEmptyMessage = true;
           return [];
         }
@@ -1165,7 +1158,6 @@
             const systemId = this.isCreateMode && detail ? detail.system.id : this.systemId;
             const scopeAction = this.authorization[systemId] || [];
             const curScopeAction = cloneDeep(scopeAction.find((scopeItem) => scopeItem.id === item.id));
-            console.log(curScopeAction, '授权实例');
             // 如果有授权边界判断授权范围是否包含有关联实例
             if (curScopeAction && curScopeAction.resource_groups) {
               curScopeAction.resource_groups.forEach((curScopeActionItem) => {
@@ -1358,8 +1350,21 @@
           this.messageAdvancedError(e);
         }
       },
+      async fetchActions (systemId) {
+        const params = {
+          system_id: systemId,
+          user_id: this.user.username
+        };
+        try {
+          const { data } = await this.$store.dispatch('permApply/getActions', params);
+          this.curSystemActions = cloneDeep(data || []);
+          this.handleActionLinearData();
+        } catch (e) {
+          this.messageAdvancedError(e);
+        }
+      },
       // 保存
-      async handleResourceSumit () {
+      async handleResourceSubmit () {
         window.changeDialog = true;
         const conditionData = this.$refs.renderResourceRef.handleGetValue();
         const { isEmpty, data } = conditionData;
@@ -1375,13 +1380,28 @@
         if (isConditionEmpty) {
           resItem.condition = ['none'];
         } else {
-          const { isMainAction, related_actions } = this.tableList[this.curIndex];
+          const { isMainAction, related_actions, id, system_id: curSystemId } = this.tableList[this.curIndex];
+          resItem.condition = data;
+          resItem.isError = false;
           // 如果为主操作
           if (isMainAction) {
             await this.handleMainActionSubmit(data, related_actions);
           }
-          resItem.condition = data;
-          resItem.isError = false;
+          // 如果没有变更实例，则从actions接口重新拉取最新的关联实例
+          if (!isMainAction && curSystemId) {
+            await this.fetchActions(curSystemId);
+            if (this.relatedActionsList.length) {
+              const policyIdList = this.tableList.map(v => v.id);
+              const linearActionList = this.relatedActionsList.filter(item => policyIdList.includes(item.id));
+              const curActions = linearActionList.filter(item => item.id === id);
+              if (curActions.length) {
+                const relatedList = curActions.map((v) => v.related_actions);
+                if (relatedList.length) {
+                  await this.handleMainActionSubmit(data, relatedList);
+                }
+              }
+            }
+          }
         }
         window.changeAlert = false;
         this.resourceInstanceSidesliderTitle = '';
@@ -1396,6 +1416,20 @@
         //     // 调用合并展开的方法 重组tableList的排序
         //     this.$emit('handleAggregateAction', false)
         // }
+      },
+      handleActionLinearData () {
+        const linearActions = [];
+        this.curSystemActions.forEach((item) => {
+          item.actions.forEach(act => {
+            linearActions.push(act);
+          });
+          (item.sub_groups || []).forEach(sub => {
+            sub.actions.forEach(act => {
+              linearActions.push(act);
+            });
+          });
+        });
+        this.relatedActionsList = cloneDeep(linearActions);
       },
       handlerConditionMouseover (payload) {
         if (Object.keys(this.curCopyParams).length < 1 && this.curCopyMode === 'normal') {

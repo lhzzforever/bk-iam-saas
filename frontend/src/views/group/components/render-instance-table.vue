@@ -1015,7 +1015,9 @@
             }
           });
         });
-        if ((instances.length !== actions.length) && (isExistAttrEmpty || !attrData.length)) {
+        // 如果instances数量与actions数量不一致，则代表聚合的操作有存在空的资源实例
+        const hasActionInstance = instances.filter((v) => v.length > 0);
+        if ((hasActionInstance.length !== actions.length) && (isExistAttrEmpty || !attrData.length)) {
           this.isAggregateEmptyMessage = true;
           return [];
         }

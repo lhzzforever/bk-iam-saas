@@ -1096,6 +1096,7 @@
           };
         }));
         this.aggregateAttrValue = cloneDeep(data.attributesDisplayData[instanceKey] || []);
+        this.isAggregateEmptyMessage = false;
         const results = this.getScopeActionResource(
           data.actions,
           instanceKey,

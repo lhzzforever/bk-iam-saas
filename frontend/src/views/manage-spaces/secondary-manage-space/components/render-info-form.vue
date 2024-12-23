@@ -568,6 +568,18 @@
         return instancesDisplayData;
       },
 
+      // 格式化属性数据格式
+      setAttributesDisplayData (data) {
+        const attributesDisplayData = data.reduce((p, v) => {
+          if (!p[v['type']]) {
+            p[v['type']] = [];
+          }
+          p[v['type']].push(v);
+          return p;
+        }, {});
+        return attributesDisplayData;
+      },
+
       handleBasicInfoChange (field, value) {
         window.changeDialog = true;
         this.formData[field] = value;
@@ -604,50 +616,67 @@
 
       handleAttrValueSelected (payload) {
         window.changeDialog = true;
-        const instances = (function () {
+        const instances = (() => {
           const arr = [];
-          payload.aggregateResourceType.forEach((resourceItem) => {
+          payload.aggregateResourceType.forEach(resourceItem => {
             const { id, name, system_id } = resourceItem;
-            payload.instancesDisplayData[id]
-              && payload.instancesDisplayData[id].forEach((v) => {
-                const curItem = arr.find((k) => k.type === id);
-                if (curItem) {
-                  curItem.path.push([
-                    {
-                      id: v.id,
-                      name: v.name,
-                      system_id,
-                      type: id,
-                      type_name: name
-                    }
-                  ]);
-                } else {
-                  arr.push({
-                    name,
+            payload.instancesDisplayData[id] && payload.instancesDisplayData[id].forEach(v => {
+              const curItem = arr.find(_ => _.type === id);
+              if (curItem) {
+                curItem.path.push([{
+                  id: v.id,
+                  name: v.name,
+                  system_id,
+                  type: id,
+                  type_name: name
+                }]);
+              } else {
+                arr.push({
+                  name,
+                  type: id,
+                  path: [[{
+                    id: v.id,
+                    name: v.name,
+                    system_id,
                     type: id,
-                    path: [
-                      [
-                        {
-                          id: v.id,
-                          name: v.name,
-                          system_id,
-                          type: id,
-                          type_name: name
-                        }
-                      ]
-                    ]
-                  });
-                }
-              });
+                    type_name: name
+                  }]]
+                });
+              }
+            });
           });
           return arr;
         })();
-        if (instances.length > 0) {
+        const attributes = (() => {
+          const arr = [];
+          payload.aggregateResourceType.forEach(resourceItem => {
+            const { id } = resourceItem;
+            const curAttrData = payload.attributesDisplayData[id];
+            if (curAttrData) {
+              curAttrData.forEach(v => {
+                const curItem = arr.find(_ => _.type === id);
+                if (curItem) {
+                  arr.push(v);
+                } else {
+                  arr.push({
+                    ...v,
+                    ...{
+                      type: id
+                    }
+                  });
+                }
+              });
+            }
+          });
+          return arr;
+        })();
+        const isExistData = instances.length > 0 || attributes.length > 0;
+        if (isExistData) {
           const actions = this.curMap.get(payload.aggregationId);
           actions.forEach(item => {
             item.resource_groups.forEach(groupItem => {
               groupItem.related_resource_types.forEach(subItem => {
-                subItem.condition = [new Condition({ instances }, '', 'add')];
+                subItem.condition = [new Condition({ instances, attributes }, '', 'add')];
               });
             });
           });
@@ -703,6 +732,7 @@
         let tempData = [];
         let templateIds = [];
         let instancesDisplayData = {};
+        let attributesDisplayData = {};
         if (payload) {
           this.policyList.forEach(item => {
             if (!item.aggregationId) {
@@ -721,47 +751,60 @@
                 tempData = uniqWith(tempData, isEqual);
               } else {
                 let curInstances = [];
-                // 这里避免从模板选择的权限和自定义权限下的操作是一致的，所以需要去重
+                let curAttributes = [];
                 tempData = uniqWith(tempData, isEqual);
                 const conditions = value.map((subItem) => subItem.resource_groups
                   && subItem.resource_groups[0].related_resource_types[0].condition);
                 // 是否都选择了实例
                 const isAllHasInstance = conditions.every(subItem => subItem[0] !== 'none' && subItem.length > 0);
+                // 批量编辑和逐项编辑增加属性条件业务
                 if (isAllHasInstance) {
-                  const instances = conditions.map(subItem => subItem.map(v => v.instance));
-                  let isAllEqual = true;
-                  for (let i = 0; i < instances.length - 1; i++) {
-                    if (!isEqual(instances[i], instances[i + 1])) {
-                      isAllEqual = false;
-                      break;
+                  const instances = conditions.map(subItem => subItem.map(v => v.instance || []));
+                  const attributes = conditions.map(subItem => subItem.map(v => v.attribute || []));
+                  const hasInstance = instances.flat(Infinity);
+                  const hasAttribute = uniqWith(attributes.flat(Infinity), isEqual);
+                  // 数据扁平化后实例是否为空
+                  if (hasInstance.length) {
+                    curInstances = [];
+                    let isAllEqual = true;
+                    for (let i = 0; i < instances.length - 1; i++) {
+                      if (!isEqual(instances[i], instances[i + 1])) {
+                        isAllEqual = false;
+                        break;
+                      }
+                    }
+                    if (isAllEqual) {
+                      const instanceData = instances[0][0];
+                      instanceData.forEach(pathItem => {
+                        const instance = pathItem.path.map(e => {
+                          return {
+                            id: e[0].id,
+                            name: e[0].name,
+                            type: e[0].type
+                          };
+                        });
+                        curInstances.push(...instance);
+                      });
+                      instancesDisplayData = this.setInstancesDisplayData(curInstances);
                     }
                   }
-                  if (isAllEqual) {
-                    const instanceData = instances[0][0];
-                    curInstances = [];
-                    instanceData.forEach(pathItem => {
-                      const instance = pathItem.path.map(e => {
-                        return {
-                          id: e[0].id,
-                          name: e[0].name,
-                          type: e[0].type
-                        };
-                      });
-                      curInstances.push(...instance);
-                    });
-                    instancesDisplayData = this.setInstancesDisplayData(curInstances);
-                  } else {
-                    curInstances = [];
+                  // 数据扁平化后属性是否为空
+                  if (hasAttribute.length) {
+                    curAttributes = [...hasAttribute];
+                    attributesDisplayData = this.setAttributesDisplayData(curAttributes);
                   }
                 } else {
                   curInstances = [];
+                  curAttributes = [];
                 }
                 tempData.push(new GroupAggregationPolicy({
                   aggregationId: key,
                   aggregate_resource_types: value[0].aggregateResourceType,
                   actions: value,
                   instances: curInstances,
-                  instancesDisplayData
+                  attributes: curAttributes,
+                  instancesDisplayData,
+                  attributesDisplayData
                 }));
               }
               templateIds.push(value[0].detail.id);

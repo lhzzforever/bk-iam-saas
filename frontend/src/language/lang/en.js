@@ -284,7 +284,24 @@ export const m = {
         '结果预览': 'Result preview',
         '解析并添加': 'Parse and add',
         '搜索解析结果': 'Search parsing results',
-        '请先从左侧输入并解析': 'Please input and parse from the left first'
+        '请先从左侧输入并解析': 'Please input and parse from the left first',
+        '剩余加载数据': 'Remaining {value} pieces of data',
+        '已加载全部数据': 'All data loaded',
+        '实例名称输入错误或不存在于授权资源实例范围内': 'Instance name input error or does not exist within the authorized resource instance scope',
+        '实例名称': 'Instance name',
+        '请输入实例名称，以回车/逗号/分号分割': 'Please enter the instance name, separated by carriage return, comma, or semicolon',
+        '本页': 'page',
+        '每页': 'Page',
+        '清除选择': 'Clear',
+        '暂无可清空数据': 'No data clear',
+        '已选父级': 'Selected parent level',
+        '测试': 'Test',
+        '恢复默认': 'Default',
+        '点击复制': 'Click to copy',
+        '复制成功': 'Copy successful',
+        '暂无可复制数据': 'There is currently no replicable data',
+        '了解更多': 'Learn more',
+        '前往申请': 'Go apply'
     },
     // 校验
     verify: {
@@ -542,7 +559,13 @@ export const m = {
          '已加入用户组数量 ， 新申请数量，总数超过上限：100，请减少申请或退出部分用户组后重试': 'Number of added user groups: {applyCount}, number of new applications: {newApplyCount}, total exceeds the limit of 100. Please reduce the number of applications or exit some user groups and try again',
          '最多添加一个管理员': 'Add at most one administrator',
          '管理员不可重复添加': 'Administrators cannot be added repeatedly',
-         '有关联的用户组, 无法删除': 'Associated user groups cannot be deleted'
+         '有关联的用户组, 无法删除': 'Associated user groups cannot be deleted',
+         '不可续期的用户组如下': 'The non renewable user groups are as follows: {value}',
+         '不可移出的用户组如下': 'The user groups that cannot be removed are as follows',
+         '手动输入蓝盾侧限制勾选组织架构提示': 'The range of user [{value}] is too large, please select again',
+         '组织架构重复添加多个相同用户名': 'User [{value}] already exists and cannot be added again',
+         '最多选择权限模板数量': 'You can only select up to {value} permissions template',
+         '空间管理员可为用户组分配的权限受限于当前空间的管控范围。如果找不到所需权限，您可以前往空间信息页申请新的权限管控范围。': 'The permissions that space administrators can assign to user groups are limited by the current control scope of the space. If you cannot find the required permissions, you can go to the space information page to apply for a new permission control scope.'
     },
     // 二次确认弹窗相关
     dialog: {

@@ -1521,6 +1521,7 @@
     padding: 5px 0;
     -webkit-line-clamp: 100;
     padding-left: 15px;
+    display: block;
     .user_departs {
       margin-bottom: 10px;
       word-break: break-all;

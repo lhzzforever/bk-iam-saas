@@ -83,6 +83,7 @@ export const beforeEach = async (to, from, next) => {
   canceling = false;
 
   let curRole = store.state.user.role.type;
+  const storeRoleId = store.state.user.role.id;
   let navIndex = store.state.index || Number(window.localStorage.getItem('index') || 0);
   let currentRoleId = String(to.query.current_role_id || '').trim();
   let curRoleId = store.state.curRoleId;
@@ -121,6 +122,9 @@ export const beforeEach = async (to, from, next) => {
   }
 
   async function getManagerInfo () {
+    if (Number(currentRoleId) === Number(storeRoleId)) {
+      return;
+    }
     const { code } = await store.dispatch('role/updateCurrentRole', { id: Number(currentRoleId) });
     if (code === 0) {
       const { role } = await store.dispatch('userInfo');

@@ -198,6 +198,7 @@
   import { getRouterDiff } from '@/common/router-handle';
   import { NEED_CONFIRM_DIALOG_ROUTER } from '@/common/constants';
   import { leavePageConfirm } from '@/common/leave-page-confirm';
+  import { buildURLParams } from '@/common/url';
   import IamGuide from '@/components/iam-guide/index.vue';
 
   const routerMap = new Map([
@@ -559,6 +560,11 @@
           this.$store.commit('updateNavId', id);
           this.updateRouter(type);
           this.resetLocalStorage();
+          if (id > 0) {
+            window.history.replaceState({}, '', `?${buildURLParams(Object.assign({}, this.$route.query, {
+              role_name: this.user.role.name
+            }))}`);
+          }
         } catch (e) {
           console.error(e);
           this.messageAdvancedError(e);

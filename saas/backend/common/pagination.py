@@ -11,12 +11,15 @@ specific language governing permissions and limitations under the License.
 # 目标是统一使用page_size/page参数
 # WebAPI: 使用config/default.py里DEFAULT_PAGINATION_CLASS默认配置的CompatiblePagination，后续需要前端配合一起调整为page_size/page参数
 # OpenAPI:
-# 对于已开放接口admin.list_groups/admin.list_group_member/mgmt.list_group/mgmt.list_group_member使用CompatiblePagination兼容limit/offset和page_size/page
+# 对于已开放接口admin.list_groups/admin.list_group_member/mgmt.list_group/mgmt.list_group_member
+# 使用CompatiblePagination兼容limit/offset和page_size/page
 # 对于OpenAPI新接口，需要ViewSet需要显示配置pagination_class=CustomPageNumberPagination
 from collections import OrderedDict
 
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
+
+from backend.common.error_codes import error_codes
 
 
 class CustomPageNumberPagination(PageNumberPagination):
@@ -29,9 +32,13 @@ class CustomPageNumberPagination(PageNumberPagination):
         Cast a string to a strictly positive integer.
         copied from https://github.com/encode/django-rest-framework/blob/master/rest_framework/pagination.py#L22
         """
-        ret = int(integer_string)
+        try:
+            ret = int(integer_string)
+        except ValueError:
+            raise error_codes.VALIDATE_ERROR.format("wrong page {}".format(integer_string))
+
         if ret < 0 or (ret == 0 and strict):
-            raise ValueError()
+            raise error_codes.VALIDATE_ERROR.format("wrong page {}".format(ret))
         if cutoff:
             return min(ret, cutoff)
         return ret

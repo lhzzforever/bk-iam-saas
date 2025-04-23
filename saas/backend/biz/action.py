@@ -14,9 +14,10 @@ from pydantic.fields import Field
 from pydantic.main import BaseModel
 from pydantic.tools import parse_obj_as
 
+from backend.common.cache import cachedmethod
 from backend.common.error_codes import error_codes
 from backend.service.action import ActionList, ActionService
-from backend.service.constants import ACTION_ALL, SubjectType
+from backend.service.constants import ACTION_ALL, SensitivityLevel
 from backend.service.models import Action, RelatedResourceType, ResourceTypeDict, Subject
 from backend.service.policy.query import PolicyQueryService
 from backend.service.resource_type import ResourceTypeService
@@ -38,6 +39,7 @@ class ActionBean(Action):
 
     expired_at: Optional[int] = None
     tag: str = ActionTag.UNCHECKED.value
+    sensitivity_level: str = ""
 
 
 class ActionSearchCondition(BaseModel):
@@ -45,6 +47,7 @@ class ActionSearchCondition(BaseModel):
 
     keyword: Optional[str] = ""
     action_group_id: Optional[int] = 0
+    sensitivity_level: Optional[str] = ""
 
 
 class ActionBeanList:
@@ -57,7 +60,7 @@ class ActionBeanList:
 
     def fill_related_resource_type_name(self):
         system_ids = self._list_related_resource_type_system()
-        name_provider = ResourceTypeService().get_resource_type_dict(system_ids)
+        name_provider = ResourceTypeService().get_system_resource_type_dict(system_ids)
         for action in self.actions:
             self._fill_action_related_resource_type_name(action, name_provider)
 
@@ -70,6 +73,11 @@ class ActionBeanList:
                 continue
             rt.name, rt.name_en = name_provider.get_name(rt.system_id, rt.id)
 
+    def fill_sensitivity_level(self, action_sensitivity_level: Dict[str, str]):
+        # 填充敏感度等级
+        for action in self.actions:
+            action.sensitivity_level = action_sensitivity_level.get(action.id, SensitivityLevel.L1.value)
+
     def filter_by_scope_action_ids(self, scope_action_ids: List[str]) -> List[ActionBean]:
         if ACTION_ALL in scope_action_ids:
             return self.actions
@@ -79,6 +87,9 @@ class ActionBeanList:
     def filter_by_name(self, name: str) -> List[ActionBean]:
         return [a for a in self.actions if name.lower() in a.name.lower() or name in a.name_en.lower()]
 
+    def filter_by_sensitivity_level(self, sensitivity_level: str) -> List[ActionBean]:
+        return [a for a in self.actions if a.sensitivity_level == sensitivity_level]
+
     def fill_expired_at_and_tag(self, action_expired_at: Dict[str, int]):
         for action in self.actions:
             if action.id not in action_expired_at:
@@ -87,21 +98,43 @@ class ActionBeanList:
             action.expired_at = action_expired_at[action.id]
             action.tag = ActionTag.READONLY.value
 
+    def list_not_hidden(self) -> List[ActionBean]:
+        return [a for a in self.actions if not a.hidden]
+
 
 class ActionBiz:
     action_svc = ActionService()
     resource_type_svc = ResourceTypeService()
     policy_svc = PolicyQueryService()
 
+    @cachedmethod(timeout=1 * 60)  # 缓存1分钟
     def list(self, system_id: str) -> ActionBeanList:
         actions = self.action_svc.list(system_id)
         action_list = ActionBeanList(parse_obj_as(List[ActionBean], actions))
         action_list.fill_related_resource_type_name()
 
+        # 填充敏感度等级
+        action_sensitivity_level = self.action_svc.get_action_sensitivity_level_map(system_id)
+        action_list.fill_sensitivity_level(action_sensitivity_level)
+
         return action_list
 
-    def list_by_role(self, system_id: str, role) -> List[ActionBean]:
+    def list_without_cache_sensitivity_level(self, system_id: str) -> ActionBeanList:
         action_list = self.list(system_id)
+
+        # 填充敏感度等级
+        action_sensitivity_level = self.action_svc.get_action_sensitivity_level_map(system_id)
+        action_list.fill_sensitivity_level(action_sensitivity_level)
+
+        return action_list
+
+    def list_by_role(self, system_id: str, role, hidden: bool = False) -> List[ActionBean]:
+        action_list = self.list(system_id)
+
+        # 隐藏的操作不显示
+        if hidden:
+            action_list = ActionBeanList(action_list.list_not_hidden())
+
         scope_action_ids = RoleListQuery(role).list_scope_action_id(system_id)
 
         actions = action_list.filter_by_scope_action_ids(scope_action_ids)
@@ -140,12 +173,15 @@ class ActionBiz:
                 action.tag = ActionTag.UNCHECKED.value
         return filter_actions
 
-    def list_by_subject(self, system_id: str, role, subject: Subject) -> List[ActionBean]:
+    def list_by_subject(self, system_id: str, role, subject: Subject, hidden: bool = False) -> List[ActionBean]:
         """
         获取用户的操作列表
         """
         actions = self.list_by_role(system_id, role)
         action_list = ActionBeanList(actions)
+
+        if hidden:
+            action_list = ActionList(action_list.list_not_hidden())
 
         policies = self.policy_svc.list_by_subject(system_id, subject)
         action_expired_at = {policy.action_id: policy.expired_at for policy in policies}
@@ -159,7 +195,7 @@ class ActionBiz:
         """
         获取用户预申请的操作列表
         """
-        actions = self.list_by_subject(system_id, role, Subject(type=SubjectType.USER.value, id=user_id))
+        actions = self.list_by_subject(system_id, role, Subject.from_username(user_id))
 
         action_set = set(action_ids)
 
@@ -171,7 +207,7 @@ class ActionBiz:
 
     def search(self, system_id: str, condition: ActionSearchCondition) -> List[ActionBean]:
         """搜索过滤某个系统下的操作"""
-        action_list = self.list(system_id)
+        action_list = self.list_without_cache_sensitivity_level(system_id)
         # 搜索条件
         if condition.keyword:
             action_list = ActionBeanList(action_list.filter_by_name(condition.keyword))
@@ -183,6 +219,9 @@ class ActionBiz:
                 system_id, action_list.actions, condition.action_group_id
             )
             action_list = ActionBeanList(actions)
+        # 使用敏感等级筛选
+        if condition.sensitivity_level:
+            action_list = ActionBeanList(action_list.filter_by_sensitivity_level(condition.sensitivity_level))
         return action_list.actions
 
 

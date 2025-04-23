@@ -9,22 +9,22 @@ an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express o
 specific language governing permissions and limitations under the License.
 """
 import logging
-from typing import List
+from typing import List, Optional
 
-from blue_krill.web.std_error import APIError
 from rest_framework import exceptions
 from rest_framework.response import Response
 
 from backend.api.constants import ALLOW_ANY
 from backend.biz.org_sync.syncer import Syncer
 from backend.biz.policy import PolicyBean, PolicyBeanList, PolicyOperationBiz, PolicyQueryBiz
-from backend.biz.role import RoleAuthorizationScopeChecker, RoleBiz
+from backend.biz.role import RoleBiz
 from backend.common.cache import cachedmethod
 from backend.common.error_codes import error_codes
 from backend.service.constants import ADMIN_USER, SubjectType
 from backend.service.models import Subject
+from backend.trans.role import RoleAuthScopeTrans
 
-from .constants import AllowListMatchOperationEnum, AllowListObjectOperationSep, AuthorizationAPIEnum, OperateEnum
+from .constants import ALLOW_LIST_OBJECT_OPERATION_STEP, AllowListMatchOperationEnum, AuthorizationAPIEnum, OperateEnum
 from .models import AuthAPIAllowListConfig
 
 logger = logging.getLogger("app")
@@ -39,8 +39,8 @@ class AllowItem:
 
         # 解析object_id，拆分出operation 和 匹配的对象
         # 若分隔符在object_id里，说明需要拆分出真正的object_id和operation
-        if AllowListObjectOperationSep in object_id:
-            object_split_list = object_id.split(AllowListObjectOperationSep)
+        if ALLOW_LIST_OBJECT_OPERATION_STEP in object_id:
+            object_split_list = object_id.split(ALLOW_LIST_OBJECT_OPERATION_STEP)
             # 长度非2，则说明非正常的规则，则默认使用等于匹配
             if len(object_split_list) == 2:
                 self.operation = object_split_list[0]
@@ -106,6 +106,7 @@ class AuthViewMixin:
 
     policy_query_biz = PolicyQueryBiz()
     policy_operation_biz = PolicyOperationBiz()
+    role_auth_scope_trans = RoleAuthScopeTrans()
 
     def grant_or_revoke(self, operate: OperateEnum, subject: Subject, policy_list: PolicyBeanList) -> List[PolicyBean]:
         """授权或回收权限"""
@@ -151,20 +152,17 @@ class AuthViewMixin:
 
         # 用户组对应的分级管理员
         role = self.role_biz.get_role_by_group_id(int(subject.id))
-        # 校验权限是否满足角色的管理范围
-        scope_checker = RoleAuthorizationScopeChecker(role)
-        system_id = policy_list.system_id
-        try:
-            scope_checker.check_policies(system_id, policy_list.policies)
-        except APIError:
-            # Note: 这里是临时处理方案，最终方案是完全支持权限模型变更
-            # 临时方案：校验不通过，则修改分级管理员的权限范围，使其通过
-            need_added_policies = scope_checker.list_not_match_policy(system_id, policy_list.policies)
-            self.role_biz.inc_update_auth_scope(role.id, system_id, need_added_policies)
 
-    def policy_response(self, policy: PolicyBean):
+        # NOTE: 临时处理: 自动扩张管理员的授权范围
+        self.role_biz.incr_update_auth_scope(role, [self.role_auth_scope_trans.from_policy_list(policy_list)])
+
+    def policy_response(self, policy: Optional[PolicyBean]):
         """所有返回单一策略的接口都统一返回的结构"""
+        if not policy:
+            return Response({})
+
         return Response(
+            # TODO: 这个PolicyID是否去除呢？这里已经调整为SaaS Policy ID了，对于调用方没什么意义
             {"policy_id": policy.policy_id, "statistics": {"instance_count": policy.count_all_type_instance()}}
         )
 

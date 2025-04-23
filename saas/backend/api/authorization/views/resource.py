@@ -18,7 +18,7 @@ from backend.service.models import Subject
 from backend.trans.open_authorization import AuthorizationTrans
 
 from ..audit import SubjectPolicyGrantOrRevokeAuditProvider
-from ..constants import AuthorizationAPIEnum, VerifyAPIParamLocationEnum
+from ..constants import AuthorizationAPIEnum, VerifyApiParamLocationEnum
 from ..mixins import AuthViewMixin
 from ..permissions import AuthorizationAPIPermission
 from ..serializers import AuthBatchInstanceSLZ, AuthBatchPathSLZ, AuthInstanceSLZ, AuthPathSLZ
@@ -32,7 +32,7 @@ class AuthInstanceView(AuthViewMixin, APIView):
     authentication_classes = [ESBAuthentication]
     permission_classes = [AuthorizationAPIPermission]
     authorization_api_permission = {
-        "post": (VerifyAPIParamLocationEnum.ACTION_IN_BODY.value, AuthorizationAPIEnum.AUTHORIZATION_INSTANCE.value),
+        "post": (VerifyApiParamLocationEnum.ACTION_IN_BODY.value, AuthorizationAPIEnum.AUTHORIZATION_INSTANCE.value),
     }
 
     trans = AuthorizationTrans()
@@ -65,7 +65,7 @@ class AuthInstanceView(AuthViewMixin, APIView):
 
         audit_context_setter(operate=operate, subject=subject, system_id=system_id, policies=policies)
 
-        return self.policy_response(policies[0])
+        return self.policy_response(policies[0] if policies else None)
 
 
 class AuthPathView(AuthViewMixin, APIView):
@@ -76,7 +76,7 @@ class AuthPathView(AuthViewMixin, APIView):
     authentication_classes = [ESBAuthentication]
     permission_classes = [AuthorizationAPIPermission]
     authorization_api_permission = {
-        "post": (VerifyAPIParamLocationEnum.SYSTEM_IN_BODY.value, AuthorizationAPIEnum.AUTHORIZATION_INSTANCE.value),
+        "post": (VerifyApiParamLocationEnum.SYSTEM_IN_BODY.value, AuthorizationAPIEnum.AUTHORIZATION_INSTANCE.value),
     }
 
     trans = AuthorizationTrans()
@@ -109,7 +109,7 @@ class AuthPathView(AuthViewMixin, APIView):
 
         audit_context_setter(operate=operate, subject=subject, system_id=system_id, policies=policies)
 
-        return self.policy_response(policies[0])
+        return self.policy_response(policies[0] if policies else None)
 
 
 class AuthBatchInstanceView(AuthViewMixin, APIView):
@@ -120,7 +120,7 @@ class AuthBatchInstanceView(AuthViewMixin, APIView):
     authentication_classes = [ESBAuthentication]
     permission_classes = [AuthorizationAPIPermission]
     authorization_api_permission = {
-        "post": (VerifyAPIParamLocationEnum.ACTIONS_IN_BODY.value, AuthorizationAPIEnum.AUTHORIZATION_INSTANCE.value),
+        "post": (VerifyApiParamLocationEnum.ACTIONS_IN_BODY.value, AuthorizationAPIEnum.AUTHORIZATION_INSTANCE.value),
     }
 
     trans = AuthorizationTrans()
@@ -164,7 +164,7 @@ class AuthBatchPathView(AuthViewMixin, APIView):
     authentication_classes = [ESBAuthentication]
     permission_classes = [AuthorizationAPIPermission]
     authorization_api_permission = {
-        "post": (VerifyAPIParamLocationEnum.SYSTEM_IN_BODY.value, AuthorizationAPIEnum.AUTHORIZATION_INSTANCE.value),
+        "post": (VerifyApiParamLocationEnum.SYSTEM_IN_BODY.value, AuthorizationAPIEnum.AUTHORIZATION_INSTANCE.value),
     }
 
     trans = AuthorizationTrans()

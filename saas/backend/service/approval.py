@@ -20,7 +20,7 @@ from backend.common.error_codes import error_codes
 from backend.plugins.approval_process.base import ApprovalProcessProvider
 from backend.plugins.approval_process.itsm import ITSMApprovalProcessProvider
 
-from .constants import DEFAULT_PROCESS_SUPPORT_APPLICATION_TYPES, ApplicationTypeEnum
+from .constants import DEFAULT_PROCESS_SUPPORT_APPLICATION_TYPES, ApplicationType
 from .models import (
     ActionApprovalProcess,
     ApprovalProcess,
@@ -50,7 +50,7 @@ class ApprovalProcessService:
         self._provider = ITSMApprovalProcessProvider()
         return self._provider
 
-    def list_with_nodes(self, application_type: ApplicationTypeEnum) -> List[ApprovalProcessWithNode]:
+    def list_with_nodes(self, application_type: ApplicationType) -> List[ApprovalProcessWithNode]:
         """审批流程列表，查询指定申请类型的流程列表，并附带流程节点"""
         return self.provider.list_with_nodes(application_type)
 
@@ -69,7 +69,7 @@ class ApprovalProcessService:
         """
         return self._get_process_id_name_dict().get(process_id) or str(process_id)
 
-    def get_default_process(self, application_type: ApplicationTypeEnum) -> DefaultApprovalProcess:
+    def get_default_process(self, application_type: ApplicationType) -> DefaultApprovalProcess:
         """获取某种申请类型的默认流程"""
         # 检查是否该申请类型支持配置审批流程
         if application_type not in DEFAULT_PROCESS_SUPPORT_APPLICATION_TYPES:
@@ -93,7 +93,7 @@ class ApprovalProcessService:
         )
 
     @staticmethod
-    def create_or_update_default_process(application_type: ApplicationTypeEnum, process_id: int, operator: str):
+    def create_or_update_default_process(application_type: ApplicationType, process_id: int, operator: str):
         """更新或创建默认流程配置"""
         ApprovalProcessGlobalConfig.objects.update_or_create(
             application_type=application_type,
@@ -112,7 +112,7 @@ class ApprovalProcessService:
         action_process_dict = {i.action_id: i.process_id for i in action_process_relations}
 
         # 默认审批流程
-        default_process = self.get_default_process(ApplicationTypeEnum.GRANT_ACTION.value).process
+        default_process = self.get_default_process(ApplicationType.GRANT_ACTION.value).process
 
         action_processes = []
         for action_id in action_ids:
@@ -155,6 +155,40 @@ class ApprovalProcessService:
                 process_id=process_id, updater=operator, updated_time=timezone.now()
             )
 
+    def batch_create_or_update_action_sensitivity_level(
+        self, system_id: str, action_ids: List[str], sensitivity_level: str, operator: str
+    ):
+        """批量更新操作的敏感级别"""
+        # 查询已存在的
+        exist_ids = set(
+            ActionProcessRelation.objects.filter(system_id=system_id, action_id__in=action_ids).values_list(
+                "action_id", flat=True
+            )
+        )
+
+        # 对不存在的进行创建
+        default_process = self.get_default_process(ApplicationType.GRANT_ACTION.value).process
+        not_exist_ids = set(action_ids) - set(exist_ids)
+        if not_exist_ids:
+            action_process_relations = [
+                ActionProcessRelation(
+                    system_id=system_id,
+                    action_id=aid,
+                    process_id=default_process.id,
+                    sensitivity_level=sensitivity_level,
+                    creator=operator,
+                    updater=operator,
+                )
+                for aid in not_exist_ids
+            ]
+            ActionProcessRelation.objects.bulk_create(action_process_relations)
+
+        # 对已存在的进行更新
+        if exist_ids:
+            ActionProcessRelation.objects.filter(system_id=system_id, action_id__in=exist_ids).update(
+                sensitivity_level=sensitivity_level, updater=operator, updated_time=timezone.now()
+            )
+
     def list_group_process(self, group_ids: List[int]) -> List[GroupApprovalProcess]:
         """批量查询用户组对应的审批流程"""
         # 获取所有已配置的用户组的审批流程
@@ -162,7 +196,7 @@ class ApprovalProcessService:
         group_process_dict = {i.group_id: i.process_id for i in group_process_relations}
 
         # 默认审批流程
-        default_process = self.get_default_process(ApplicationTypeEnum.JOIN_GROUP.value).process
+        default_process = self.get_default_process(ApplicationType.JOIN_GROUP.value).process
 
         group_processes = []
         for group_id in group_ids:

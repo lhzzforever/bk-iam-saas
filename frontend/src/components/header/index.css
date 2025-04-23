@@ -19,6 +19,16 @@ $cubic-bezier: cubic-bezier(0.4, 0, 0.2, 1);
         padding-left: 260px;
     }
 
+    &.external-nav-sticked {
+        padding-left: 4px;
+    }
+
+    &.hide-bread {
+        padding-left: 0px !important;
+        height: 0px !important;
+        border: none;
+    }
+
     .page-tab-wrapper {
         position: relative;
         top: 54px;
@@ -42,6 +52,10 @@ $cubic-bezier: cubic-bezier(0.4, 0, 0.2, 1);
         font-size: 0;
         &.has-cursor {
             cursor: pointer;
+        }
+        .breadcrumbs-content {
+            display: flex;
+            align-items: center;
         }
         .breadcrumbs-back {
             position: relative;

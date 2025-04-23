@@ -11,8 +11,10 @@ specific language governing permissions and limitations under the License.
 import logging
 import traceback
 
+from blue_krill.web.std_error import APIError
 from django.contrib.auth.backends import ModelBackend
 from django.db import IntegrityError
+from rest_framework import status
 
 from backend.account import get_user_model
 from backend.component import login
@@ -20,6 +22,13 @@ from backend.component import login
 logger = logging.getLogger("app")
 
 ROLE_TYPE_ADMIN = "1"
+
+
+class PermissionForbidden(Exception):
+    def __init__(self, message):
+        self.status_code = status.HTTP_403_FORBIDDEN
+        self.code = 1302403
+        self.message = message
 
 
 class TokenBackend(ModelBackend):
@@ -41,14 +50,14 @@ class TokenBackend(ModelBackend):
             # 判断是否获取到用户信息,获取不到则返回None
             if not get_user_info_result:
                 return None
-            user.set_property(key="qq", value=user_info.get("qq", ""))
+            # user.set_property(key="qq", value=user_info.get("qq", ""))
             user.set_property(key="language", value=user_info.get("language", ""))
             user.set_property(key="time_zone", value=user_info.get("time_zone", ""))
             user.set_property(key="role", value=user_info.get("role", ""))
-            user.set_property(key="phone", value=user_info.get("phone", ""))
-            user.set_property(key="email", value=user_info.get("email", ""))
-            user.set_property(key="wx_userid", value=user_info.get("wx_userid", ""))
-            user.set_property(key="chname", value=user_info.get("chname", ""))
+            # user.set_property(key="phone", value=user_info.get("phone", ""))
+            # user.set_property(key="email", value=user_info.get("email", ""))
+            # user.set_property(key="wx_userid", value=user_info.get("wx_userid", ""))
+            # user.set_property(key="chname", value=user_info.get("chname", ""))
 
             # 用户如果不是管理员，则需要判断是否存在平台权限，如果有则需要加上
             if not user.is_superuser and not user.is_staff:
@@ -59,6 +68,8 @@ class TokenBackend(ModelBackend):
                 user.save()
             return user
 
+        except PermissionForbidden as e:
+            raise e
         except IntegrityError:
             logger.exception(traceback.format_exc())
             logger.exception("get_or_create UserModel fail or update_or_create UserProperty")
@@ -68,8 +79,7 @@ class TokenBackend(ModelBackend):
             logger.exception("Auto create & update UserModel fail")
             return None
 
-    @staticmethod
-    def get_user_info(bk_token):
+    def get_user_info(self, bk_token):
         """
         请求平台ESB接口获取用户信息
         @param bk_token: bk_token
@@ -97,6 +107,7 @@ class TokenBackend(ModelBackend):
             data = login.get_user_info(bk_token)
         except Exception as e:  # pylint: disable=broad-except
             logger.exception("Abnormal error in get_user_info...:%s" % e)
+            self._handle_exception(e)
             return False, {}
 
         user_info = {}
@@ -112,8 +123,7 @@ class TokenBackend(ModelBackend):
         user_info["role"] = data.get("bk_role", "")
         return True, user_info
 
-    @staticmethod
-    def verify_bk_token(bk_token):
+    def verify_bk_token(self, bk_token):
         """
         请求VERIFY_URL,认证bk_token是否正确
         @param bk_token: "_FrcQiMNevOD05f8AY0tCynWmubZbWz86HslzmOqnhk"
@@ -123,8 +133,18 @@ class TokenBackend(ModelBackend):
         """
         try:
             data = login.verify_bk_token(bk_token)
-        except Exception:  # pylint: disable=broad-except
-            logger.exception("Abnormal error in verify_bk_token...")
+        except Exception as e:  # pylint: disable=broad-except
+            logger.warn("Abnormal error in verify_bk_token...", exc_info=True)
+            self._handle_exception(e)
             return False, None
 
-        return True, data["username"]
+        return True, data["bk_username"]
+
+    def _handle_exception(self, e):
+        """处理登录特殊异常, 需要前端响应给用户"""
+        if isinstance(e, APIError) and "1302403" in e.message:
+            msg_prefix = "message="
+            idx = e.message.rfind(msg_prefix)
+            message = e.message[idx + len(msg_prefix) : -1]
+
+            raise PermissionForbidden(message)

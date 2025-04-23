@@ -11,6 +11,7 @@ specific language governing permissions and limitations under the License.
 from typing import Any, Optional
 
 from aenum import LowerStrEnum, auto
+from redis.exceptions import LockNotOwnedError
 
 from .cache import Cache, CacheEnum, CacheKeyPrefixEnum
 
@@ -18,8 +19,15 @@ from .cache import Cache, CacheEnum, CacheKeyPrefixEnum
 class LockTypeEnum(LowerStrEnum):
     PERMISSION_HANDOVER = auto()  # 权限交接
     ORGANIZATION_SYNC = auto()  # 组织同步
-    POLICY_ALETER = auto()  # 权限变更
+    POLICY_ALTER = auto()  # 权限变更
     LONG_TASK_CREATE = auto()  # 长时任务创建
+    INIT_GRADE_MANAGER = auto()
+    BCS_MANAGER = auto()
+
+    GROUP_UPSERT = auto()
+    TEMPLATE_UPSERT = auto()
+    ROLE_UPSERT = auto()
+    SUBJECT_TEMPLATE_UPSERT = auto()
 
 
 class RedisLock:
@@ -55,7 +63,10 @@ class RedisLock:
         return self._lock.acquire(blocking=self._blocking)
 
     def release(self):
-        self._lock.release()
+        try:
+            self._lock.release()
+        except LockNotOwnedError:
+            pass
 
 
 def gen_permission_handover_lock(key: str) -> RedisLock:
@@ -66,9 +77,35 @@ def gen_organization_sync_lock() -> RedisLock:
     return RedisLock(LockTypeEnum.ORGANIZATION_SYNC.value, timeout=10)
 
 
-def gen_policy_alert_lock(key: str) -> RedisLock:
-    return RedisLock(LockTypeEnum.POLICY_ALETER.value, suffix=key, timeout=10)
+def gen_policy_alter_lock(template_id: int, system_id: str, subject_type: str, subject_id: str) -> RedisLock:
+    key = f"{template_id}:{system_id}:{subject_type}:{subject_id}"
+    return RedisLock(LockTypeEnum.POLICY_ALTER.value, suffix=key, timeout=10)
 
 
 def gen_long_task_create_lock(key: str) -> RedisLock:
     return RedisLock(LockTypeEnum.LONG_TASK_CREATE.value, suffix=key, timeout=10)
+
+
+def gen_init_grade_manager_lock() -> RedisLock:
+    return RedisLock(LockTypeEnum.INIT_GRADE_MANAGER.value, timeout=600)
+
+
+def gen_group_upsert_lock(role_id: int) -> RedisLock:
+    return RedisLock(LockTypeEnum.GROUP_UPSERT.value, suffix=str(role_id), timeout=10)
+
+
+def gen_subject_template_upsert_lock(role_id: int) -> RedisLock:
+    return RedisLock(LockTypeEnum.SUBJECT_TEMPLATE_UPSERT.value, suffix=str(role_id), timeout=10)
+
+
+def gen_template_upsert_lock(role_id: int, name: str) -> RedisLock:
+    key = f"{role_id}:{name}"
+    return RedisLock(LockTypeEnum.TEMPLATE_UPSERT.value, suffix=key, timeout=10)
+
+
+def gen_role_upsert_lock(name: str) -> RedisLock:
+    return RedisLock(LockTypeEnum.TEMPLATE_UPSERT.value, suffix=name, timeout=10)
+
+
+def gen_bcs_manager_lock() -> RedisLock:
+    return RedisLock(LockTypeEnum.BCS_MANAGER.value, timeout=600)

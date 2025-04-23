@@ -10,6 +10,14 @@
             -webkit-box-orient: vertical;
         }
 
+        .bk-table-empty-block {
+            background-color: #ffffff;
+        }
+
+        .bk-table-pagination-wrapper {
+            background-color: #ffffff;
+        }
+
         .tippy-content {
             padding: 0 !important;
         }
@@ -229,6 +237,18 @@
         }
         .bk-select-name {
             height: 40px !important;
+        }
+    }
+
+    .iam-custom-dialog-title {
+        text-align: center;
+        word-break: break-all;
+    }
+
+    .sensitivity-level-select-tag {
+        margin: 0 6px 0 0;
+        &-custom {
+          background-color: #c02121;
         }
     }
 }

@@ -12,10 +12,12 @@ from django_filters import rest_framework as filters
 
 from backend.apps.group.models import Group
 from backend.apps.policy.models import Policy
+from backend.apps.subject_template.models import SubjectTemplate
 from backend.apps.template.models import PermTemplatePolicyAuthorized
 from backend.biz.group import GroupBiz
 from backend.biz.open import ApplicationPolicyListCache
 from backend.common.cache import cached
+from backend.common.filters import InitialFilterSet
 from backend.component import iam
 from backend.service.constants import SubjectType
 
@@ -26,7 +28,7 @@ def _list_pre_application_group_ids(cache_id: str):
     return GroupBiz().list_pre_application_groups(policy_list)
 
 
-class GroupFilter(filters.FilterSet):
+class GroupFilter(InitialFilterSet):
     system_id = filters.CharFilter(method="system_id_filter", label="系统id")
     creator = filters.CharFilter(label="创建人")
     username = filters.CharFilter(method="username_filter", label="用户名")
@@ -36,10 +38,23 @@ class GroupFilter(filters.FilterSet):
     description = filters.CharFilter(label="描述", lookup_expr="icontains")
     role_id = filters.NumberFilter(method="role_id_filter", label="角色ID")
     cache_id = filters.CharFilter(label="cache_id", method="cache_id_filter")
+    hidden = filters.BooleanFilter(method="hidden_filter", initial=True)
+    apply_disable = filters.BooleanFilter(label="不可被申请")
 
     class Meta:
         model = Group
-        fields = ["system_id", "creator", "username", "department_id", "name", "id", "description", "role_id"]
+        fields = [
+            "system_id",
+            "creator",
+            "username",
+            "department_id",
+            "name",
+            "id",
+            "description",
+            "role_id",
+            "hidden",
+            "apply_disable",
+        ]
 
     def system_id_filter(self, queryset, name, value):
         template_group_ids = list(
@@ -61,7 +76,8 @@ class GroupFilter(filters.FilterSet):
         return self._subject_filter(queryset, SubjectType.DEPARTMENT.value, value)
 
     def _subject_filter(self, queryset, _type, _id):
-        data = iam.get_subject_relation(_type, _id)
+        # NOTE: 可能会有性能问题, 分页查询用户的所有组列表
+        data = iam.list_all_subject_groups(_type, _id)
         group_ids = [int(g["id"]) for g in data]
         return queryset.filter(id__in=group_ids)
 
@@ -72,6 +88,11 @@ class GroupFilter(filters.FilterSet):
         group_ids = _list_pre_application_group_ids(value)
         return queryset.filter(id__in=group_ids)
 
+    def hidden_filter(self, queryset, name, value):
+        if value:
+            return queryset.filter(hidden=False)
+        return queryset
+
 
 class GroupTemplateSystemFilter(filters.FilterSet):
     system_id = filters.CharFilter(label="系统id")
@@ -79,3 +100,11 @@ class GroupTemplateSystemFilter(filters.FilterSet):
     class Meta:
         model = PermTemplatePolicyAuthorized
         fields = ["system_id"]
+
+
+class GroupSubjectTemplateFilter(filters.FilterSet):
+    name = filters.CharFilter(label="名字", lookup_expr="icontains")
+
+    class Meta:
+        model = SubjectTemplate
+        fields = ["name"]

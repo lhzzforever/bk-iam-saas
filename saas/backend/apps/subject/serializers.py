@@ -28,6 +28,9 @@ class SubjectGroupSLZ(serializers.Serializer):
     description = serializers.CharField(label="描述", allow_blank=True)
     department_id = serializers.IntegerField(label="部门ID", help_text="0则为个人，其他为继承的部门ID")
     department_name = serializers.CharField(label="部门名称")
+    user_count = serializers.IntegerField(label="用户数")
+    department_count = serializers.IntegerField(label="部门数")
+    subject_template_count = serializers.IntegerField(label="人员模版数")
 
 
 class QueryRoleSLZ(serializers.Serializer):

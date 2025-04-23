@@ -19,7 +19,9 @@ from rest_framework.request import Request
 from backend.apps.group.models import Group
 from backend.apps.organization.models import User
 from backend.apps.role.models import Role
+from backend.apps.subject_template.models import SubjectTemplate
 from backend.audit.models import get_event_model
+from backend.common.base import is_open_api_request_path
 from backend.common.local import local
 from backend.service.models import Subject
 
@@ -124,7 +126,7 @@ def log_api_event(request, provider: DataProvider):
 
 
 def _parse_request_audit_type(request):
-    if "/api/v1/open/" in request.path:
+    if is_open_api_request_path(request.path):
         return AuditSourceType.OPENAPI.value, request.bk_app_code
 
     return AuditSourceType.WEB.value, ""
@@ -310,11 +312,11 @@ def log_user_permission_clean_event(
     """
     Event = get_event_model()
     event = Event(
-        type=AuditType.USER_PERMISSION_CLEANUP.value,
+        type=AuditType.USER_PERMISSION_CLEAN.value,
         username=subject.id,
-        object_type=AuditObjectType.USER_PERMISSION_CLEANUP.value,
+        object_type=AuditObjectType.USER_PERMISSION_CLEAN.value,
         object_id="0",
-        object_name="user_permission_cleanup",
+        object_name="user_permission_clean",
         source_type=source_type,
     )
     extra = extra if extra else {}
@@ -323,3 +325,39 @@ def log_user_permission_clean_event(
     event.extra = extra
 
     event.save(force_insert=True)
+
+
+def log_subject_template_event(
+    _type: str,
+    subject: Subject,
+    subject_template_ids: List[int],
+    username: Optional[str] = None,
+    source_type: str = AuditSourceType.HANDOVER.value,
+    sn: Optional[str] = None,
+):
+    """
+    记录人员模版相关的审批事件
+    """
+    templates = SubjectTemplate.objects.filter(id__in=subject_template_ids)
+    username = username or subject.id
+
+    Event = get_event_model()
+
+    events = []
+    for template in templates:
+        event = Event(
+            type=_type,
+            username=username,
+            object_type=AuditObjectType.SUBJECT_TEMPLATE.value,
+            object_id=template.id,
+            object_name=template.name,
+            source_type=source_type,
+        )
+        extra: Dict[str, Any] = {"subjects": [subject.dict()]}
+        if sn:
+            extra["sn"] = sn
+        event.extra = extra
+
+        events.append(event)
+
+    Event.objects.bulk_create(events)

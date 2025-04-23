@@ -12,7 +12,14 @@ from typing import List
 
 from pydantic import BaseModel
 
-from backend.service.constants import PolicyEnvConditionTypeEnum, PolicyEnvTypeEnum, SubjectType, WeekDayEnum
+from backend.service.constants import (
+    ANY_ID,
+    PolicyEnvConditionType,
+    PolicyEnvType,
+    SensitivityLevel,
+    SubjectType,
+    WeekDayEnum,
+)
 from backend.service.models import (
     ApplicationAuthorizationScope,
     ApplicationEnvironment,
@@ -227,17 +234,17 @@ class EnvironmentColumnValue(BaseModel):
 
     @classmethod
     def from_environment(cls, environment: ApplicationEnvironment) -> "EnvironmentColumnValue":
-        type = BaseDictStrValue(value=dict(PolicyEnvTypeEnum.get_choices())[environment.type])
+        type = BaseDictStrValue(value=dict(PolicyEnvType.get_choices())[environment.type])
         condition = BaseDictListValue(value=[])
 
-        cond_type_dict = dict(PolicyEnvConditionTypeEnum.get_choices())
+        cond_type_dict = dict(PolicyEnvConditionType.get_choices())
         for cond in environment.condition:
             text = f"{cond_type_dict[cond.type]}: "
-            if cond.type == PolicyEnvConditionTypeEnum.TZ.value:
+            if cond.type == PolicyEnvConditionType.TZ.value:
                 text += cond.values[0].value
-            elif cond.type == PolicyEnvConditionTypeEnum.HMS.value:
+            elif cond.type == PolicyEnvConditionType.HMS.value:
                 text += f"{cond.values[0].value} -- {cond.values[1].value}"
-            elif cond.type == PolicyEnvConditionTypeEnum.WEEKDAY.value:
+            elif cond.type == PolicyEnvConditionType.WEEKDAY.value:
                 week_day_dict = dict(WeekDayEnum.get_choices())
                 text += ", ".join([week_day_dict[int(v.value)] for v in cond.values])
 
@@ -305,9 +312,51 @@ class ResourceGroupInfo(BaseModel):
 
     @classmethod
     def from_resource_groups(cls, resource_groups: ApplicationResourceGroupList) -> "ResourceGroupInfo":
-        value = [BaseDictStrValue(value=f"已设置 {len(resource_groups)} 个资源组合")]
+        value = [BaseDictStrValue(value=cls.gen_resource_summary(resource_groups))]
         children = [ResourceGroupTable.from_resource_groups(resource_groups)]
         return ResourceGroupInfo(value=value, children=children)
+
+    @staticmethod
+    def gen_resource_summary(resource_groups: ApplicationResourceGroupList) -> str:
+        """
+        生成资源组合概要信息
+        """
+        if len(resource_groups) != 1:
+            return f"已设置 {len(resource_groups)} 个资源组"
+
+        summary = []
+        for rg in resource_groups:
+            for rt in rg.related_resource_types:
+                resource_type_name = rt.name
+                if len(rt.condition) == 0:
+                    value = f"{resource_type_name}: 无限制"
+                else:
+                    # 解析资源条件
+                    resource_name = ""
+                    resource_count = 0
+                    attribute_count = 0
+                    for c in rt.condition:
+                        for instance in c.instances:
+                            resource_count += len(instance.path)
+                            if resource_name == "":
+                                if instance.path[0][-1].id == ANY_ID and len(instance.path[0]) > 1:
+                                    resource_name = instance.path[0][-2].name
+                                else:
+                                    resource_name = instance.path[0][-1].name
+                        attribute_count += len(c.attributes)
+
+                    if attribute_count == 0 and resource_count == 1:
+                        value = f"{resource_type_name}: {resource_name}"
+                    elif attribute_count == 0 and resource_count > 1:
+                        value = f"{resource_type_name}: {resource_name}等{resource_count}个实例"
+                    elif attribute_count > 0 and resource_count == 0:
+                        value = f"{resource_type_name}: {attribute_count}个属性"
+                    else:
+                        value = f"{resource_type_name}: {resource_count}个实例({attribute_count}个属性)"
+
+                summary.append(value)
+
+        return ", ".join(summary)
 
 
 # ---------------------------- 自定义权限申请 ----------------------------
@@ -315,6 +364,7 @@ class ActionColumnValue(BaseModel):
     """权限表格每一列的值"""
 
     action: BaseDictStrValue
+    sensitivity_level: BaseDictStrValue
     resource_groups: ResourceGroupInfo
     expired_display: BaseDictStrValue
 
@@ -326,6 +376,7 @@ class ActionColumnValue(BaseModel):
             resource_groups = ResourceGroupInfo.from_resource_groups(policy.resource_groups)
         return cls(
             action=BaseDictStrValue(value=policy.name),
+            sensitivity_level=BaseDictStrValue(value=SensitivityLevel.get_choice_label(policy.sensitivity_level)),
             resource_groups=resource_groups,
             expired_display=BaseDictStrValue(value=policy.expired_display),
         )
@@ -391,6 +442,8 @@ class GroupColumnValue(BaseModel):
     desc: BaseDictStrValue
     expired_display: BaseDictStrValue
     group_info: GroupInfo
+    role_name: BaseDictStrValue
+    highest_sensitivity_level: BaseDictStrValue  # 最高敏感等级
 
     @classmethod
     def from_group(cls, group: ApplicationGroupInfo):
@@ -399,6 +452,10 @@ class GroupColumnValue(BaseModel):
             desc=BaseDictStrValue(value=group.description),
             expired_display=BaseDictStrValue(value=group.expired_display),
             group_info=GroupInfo.from_group(group),
+            role_name=BaseDictStrValue(value=group.role_name),
+            highest_sensitivity_level=BaseDictStrValue(
+                value=SensitivityLevel.get_choice_label(group.highest_sensitivity_level)
+            ),
         )
 
 
@@ -453,7 +510,7 @@ class GradeManagerForm(BaseModel):
     def from_application(cls, application_data: GradeManagerApplicationContent):
         form_data = [
             # 基本信息
-            BaseText(label="【分级管理员名称】", value=application_data.name),
+            BaseText(label="【管理空间名称】", value=application_data.name),
             BaseText(label="【描述】", value=application_data.description if application_data.description else "--"),
             BaseText(label="【成员列表】", value=";".join([f"{m.id}({m.name})" for m in application_data.members])),
             BaseText(label="【操作和实例范围】"),

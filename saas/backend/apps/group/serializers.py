@@ -9,6 +9,7 @@ an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express o
 specific language governing permissions and limitations under the License.
 """
 import time
+from datetime import datetime
 from typing import List
 
 from django.conf import settings
@@ -21,25 +22,22 @@ from backend.apps.application.base_serializers import BaseAggActionListSLZ, vali
 from backend.apps.application.serializers import ExpiredAtSLZ, SystemInfoSLZ
 from backend.apps.group.models import Group
 from backend.apps.policy.serializers import BasePolicyActionSLZ, ResourceTypeSLZ
-from backend.apps.role.models import Role, RoleRelatedObject
+from backend.apps.role.models import Role, RoleRelatedObject, RoleRelation
+from backend.apps.subject_template.models import SubjectTemplate
 from backend.apps.template.models import PermTemplatePolicyAuthorized
-from backend.biz.group import GroupBiz, GroupCheckBiz
+from backend.biz.group import GroupBiz
 from backend.biz.policy import PolicyBean, PolicyBeanList
+from backend.biz.subject_template import SubjectTemplateBiz
 from backend.biz.system import SystemBiz
 from backend.biz.template import TemplateBiz
-from backend.common.time import PERMANENT_SECONDS
+from backend.common.serializers import GroupMemberSLZ, GroupSearchSLZ  # noqa
+from backend.common.time import PERMANENT_SECONDS, expired_at_display
 from backend.service.constants import ADMIN_USER, GroupMemberType, RoleRelatedObjectType
 from backend.service.group_saas_attribute import GroupAttributeService
-from backend.service.models import Subject
-
-
-class GroupMemberSLZ(serializers.Serializer):
-    type = serializers.ChoiceField(label="成员类型", choices=GroupMemberType.get_choices())
-    id = serializers.CharField(label="成员id")
 
 
 class SearchMemberSLZ(serializers.Serializer):
-    keyword = serializers.CharField(label="搜索关键词", min_length=3, allow_null=False, required=False)
+    keyword = serializers.CharField(label="搜索关键词", allow_null=False, required=False, default="")
 
 
 class GroupIdSLZ(serializers.Serializer):
@@ -53,6 +51,8 @@ class GroupIdSLZ(serializers.Serializer):
 class GroupSLZ(serializers.ModelSerializer):
     role = serializers.SerializerMethodField()
     attributes = serializers.SerializerMethodField()
+    role_members = serializers.SerializerMethodField()
+    subject_template_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Group
@@ -61,24 +61,36 @@ class GroupSLZ(serializers.ModelSerializer):
             "name",
             "user_count",
             "department_count",
+            "subject_template_count",
             "description",
             "creator",
             "created_time",
             "role",
             "attributes",
             "readonly",
+            "apply_disable",
+            "role_members",
         )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.group_role_dict = None
         self.group_attrs_dict = None
+        self.subject_template_count_dict = None
         if isinstance(self.instance, (QuerySet, list)) and self.instance:
             group_ids = [group.id for group in self.instance]
             self.group_role_dict = GroupBiz().get_group_role_dict_by_ids(group_ids)
 
             # 查询涉及到的用户组的属性
             self.group_attrs_dict = GroupAttributeService().batch_get_attributes(group_ids)
+
+            # 人员模版数量
+            self.subject_template_count_dict = SubjectTemplateBiz().get_group_template_count_dict(group_ids)
+        elif isinstance(self.instance, Group):
+            self.group_attrs_dict = GroupAttributeService().batch_get_attributes([self.instance.id])
+
+            # 人员模版数量
+            self.subject_template_count_dict = SubjectTemplateBiz().get_group_template_count_dict([self.instance.id])
 
     def get_role(self, obj):
         if not self.group_role_dict:
@@ -97,6 +109,20 @@ class GroupSLZ(serializers.ModelSerializer):
         if group_attributes:
             return group_attributes.get_attributes()
         return {}
+
+    def get_role_members(self, obj):
+        if not self.group_role_dict:
+            return []
+        role = self.group_role_dict.get(obj.id)
+        if not role or not role.members:
+            return []
+
+        return role.members
+
+    def get_subject_template_count(self, obj):
+        if not self.subject_template_count_dict:
+            return 0
+        return self.subject_template_count_dict.get(obj.id, 0)
 
 
 class MemberSLZ(serializers.Serializer):
@@ -123,16 +149,6 @@ class GroupAddMemberSLZ(serializers.Serializer):
         # 屏蔽admin授权
         return [m for m in value if not (m["type"] == GroupMemberType.USER.value and m["id"] == ADMIN_USER)]
 
-    def validate(self, data):
-        """
-        校验成员加入的用户组数是否超过限制
-        """
-        group_check_biz = GroupCheckBiz()
-        for member in data["members"]:
-            # subject加入的用户组数量不能超过最大值
-            group_check_biz.check_subject_group_limit(Subject.parse_obj(member))
-        return data
-
 
 class GroupsAddMemberSLZ(GroupAddMemberSLZ):
     group_ids = serializers.ListField(label="用户组ID列表")
@@ -140,7 +156,8 @@ class GroupsAddMemberSLZ(GroupAddMemberSLZ):
 
 class GroupUpdateSLZ(serializers.Serializer):
     name = serializers.CharField(label="用户组名称", min_length=2, max_length=128)
-    description = serializers.CharField(label="描述", min_length=10)
+    description = serializers.CharField(label="描述", allow_blank=True)
+    apply_disable = serializers.BooleanField(label="是否不可申请", default=False)
 
     def validate(self, data):
         """
@@ -148,13 +165,17 @@ class GroupUpdateSLZ(serializers.Serializer):
         """
         if self.instance:
             if Group.objects.exclude(id=self.instance.id).filter(name=data["name"]).exists():
-                raise serializers.ValidationError({"name": [_("用户组名称不能与已有的重复")]})
+                raise serializers.ValidationError({"name": [_("存在同名用户组")]})
 
         return data
 
 
 class GroupDeleteMemberSLZ(serializers.Serializer):
     members = serializers.ListField(label="成员列表", child=GroupMemberSLZ(label="成员"), allow_empty=False)
+
+
+class BatchGroupDeleteMemberSLZ(GroupDeleteMemberSLZ):
+    group_ids = serializers.ListField(label="用户组ID列表")
 
 
 class GroupTemplateSchemaSLZ(serializers.Serializer):
@@ -308,10 +329,12 @@ def validate_template_authorization(templates):
 
 class GroupCreateSLZ(serializers.Serializer):
     name = serializers.CharField(label="用户组名称", min_length=2, max_length=128)
-    description = serializers.CharField(label="描述", min_length=10)
+    description = serializers.CharField(label="描述", allow_blank=True)
     members = serializers.ListField(label="成员列表", child=GroupMemberSLZ(label="成员"))
     expired_at = serializers.IntegerField(label="过期时间", max_value=PERMANENT_SECONDS)
     templates = serializers.ListField(label="授权信息", child=TemplateAuthorizationSLZ(label="模板授权"), allow_empty=True)
+    apply_disable = serializers.BooleanField(label="是否不可申请", default=False)
+    sync_subject_template = serializers.BooleanField(label="是否同步创建人员模板", default=False)
 
     def validate(self, data):
         """
@@ -325,14 +348,47 @@ class GroupCreateSLZ(serializers.Serializer):
             if data["expired_at"] <= int(time.time()):
                 raise serializers.ValidationError({"expired_at": ["greater than now timestamp"]})
 
-            group_check_biz = GroupCheckBiz()
-            for member in data["members"]:
-                # subject加入的用户组数量不能超过最大值
-                group_check_biz.check_subject_group_limit(Subject.parse_obj(member))
         return data
 
 
-class GroupAuthoriedConditionSLZ(serializers.Serializer):
+class GroupAuthorizedConditionSLZ(serializers.Serializer):
     action_id = serializers.CharField(label="操作ID")
     resource_group_id = serializers.CharField(label="资源条件组ID")
     related_resource_type = ResourceTypeSLZ(label="资源类型")
+
+
+class GradeManagerGroupTransferSLZ(serializers.Serializer):
+    subset_manager_id = serializers.IntegerField(label="子集管理员id")
+
+    def validate_subset_manager_id(self, value):
+        role = self.context["role"]
+        if not RoleRelation.objects.filter(parent_id=role.id, role_id=value).exists():
+            raise serializers.ValidationError(f"subset manager id {value} not exists")
+        return value
+
+
+class GroupSubjectTemplateListSLZ(serializers.ModelSerializer):
+    expired_at = serializers.SerializerMethodField(label="过期时间")
+    expired_at_display = serializers.SerializerMethodField(label="过期时间显示")
+    created_time = serializers.SerializerMethodField(label="创建时间")
+
+    class Meta:
+        model = SubjectTemplate
+        fields = ("id", "name", "description", "expired_at", "expired_at_display", "creator", "created_time")
+
+    def get_expired_at(self, obj):
+        return self.context["template_dict"].get(obj.id, {}).get("expired_at", 0)
+
+    def get_expired_at_display(self, obj):
+        return expired_at_display(self.get_expired_at(obj))
+
+    def get_created_time(self, obj):
+        t = self.context["template_dict"].get(obj.id, {}).get("created_time", "")
+        if not isinstance(t, datetime):
+            return t
+
+        return serializers.DateTimeField().to_representation(t)
+
+
+class SearchTemplateGroupMemberSLZ(SearchMemberSLZ):
+    template_id = serializers.IntegerField(label="模板ID", required=True)

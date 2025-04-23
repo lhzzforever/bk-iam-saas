@@ -13,8 +13,9 @@ import logging
 from collections import defaultdict
 from typing import Dict, List, Set, Tuple
 
-from backend.apps.organization.models import Department, DepartmentMember
+from backend.apps.organization.models import Department, DepartmentMember, SubjectToDelete
 from backend.component import usermgr
+from backend.service.constants import SubjectType
 
 from .base import BaseSyncDBService
 from .util import convert_list_for_mptt
@@ -51,7 +52,7 @@ class DBDepartmentSyncService(BaseSyncDBService):
 
         # 1. 使用BFS转换出可顺序插入的列表，使用mptt进行插入
         id_parent_ids = [(i.id, i.parent_id) for i in created_departments]
-        sorted_departments = convert_list_for_mptt(id_parent_ids)
+        sorted_departments = convert_list_for_mptt(id_parent_ids)  # 把父级部门排到前面, 保证父级部门会被先创建
 
         # 2. 以mptt方式添加部门，不可批量添加，因为存在依赖，添加时parent可能未存在
         created_department_dict = {i.id: i for i in created_departments}
@@ -69,6 +70,11 @@ class DBDepartmentSyncService(BaseSyncDBService):
             dept.parent = parent_department
             dept.save()
 
+        # 移除待删除的部门
+        SubjectToDelete.objects.filter(
+            subject_type=SubjectType.DEPARTMENT.value, subject_id__in=[str(i.id) for i in created_departments]
+        ).delete()
+
     def deleted_handler(self):
         """关于删除部门，DB的处理"""
         # 新老数据对比 => 需要删除的部门
@@ -80,7 +86,7 @@ class DBDepartmentSyncService(BaseSyncDBService):
 
         # 1. 使用BFS转换出可顺序删除的列表，使用mptt进行删除
         id_parent_ids = [(i.id, i.parent_id) for i in deleted_departments]
-        sorted_departments = convert_list_for_mptt(id_parent_ids, reverse=True)
+        sorted_departments = convert_list_for_mptt(id_parent_ids, reverse=True)  # 把子级部门排到前面, 保证先删除的是子级部门
 
         # 2. 以mptt方式删除部门，不可批量删除，因为存在依赖，删除时可能前一个parent也在删除中，树无法变更
         created_department_dict = {i.id: i for i in deleted_departments}
@@ -88,6 +94,13 @@ class DBDepartmentSyncService(BaseSyncDBService):
             created_department_dict[dept_id].delete()
 
         # TODO: DB里其他表存在了被删的记录如何处理？不处理可能展示有些问题，比如权限模板授权表等等
+
+        # 记录待删除的部门
+        subject_to_delete = [
+            SubjectToDelete(subject_id=str(dept_id), subject_type=SubjectType.DEPARTMENT.value)
+            for dept_id in sorted_departments
+        ]
+        SubjectToDelete.objects.bulk_create(subject_to_delete, batch_size=100, ignore_conflicts=True)
 
     def updated_parent_handler(self):
         """关于更新部门拓扑，DB的处理"""

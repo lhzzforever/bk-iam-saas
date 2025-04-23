@@ -15,7 +15,13 @@ from rest_framework.viewsets import ViewSet
 
 from backend.biz.resource import ResourceBiz
 
-from .serializers import BaseInfoSLZ, ResourceAttributeQuerySLZ, ResourceAttributeValueQuerySLZ, ResourceQuerySLZ
+from .serializers import (
+    BaseInfoSLZ,
+    ResourceAttributeQuerySLZ,
+    ResourceAttributeValueQuerySLZ,
+    ResourceQueryByDisplayNameSLZ,
+    ResourceQuerySLZ,
+)
 
 
 class ResourceViewSet(ViewSet):
@@ -37,6 +43,8 @@ class ResourceViewSet(ViewSet):
         resource_type_id = slz.validated_data["type"]
         ancestors = slz.validated_data["ancestors"]
         keyword = slz.validated_data.get("keyword") or ""
+        action_system_id = slz.validated_data.get("action_system_id") or ""
+        action_id = slz.validated_data.get("action_id") or ""
         # 分页
         limit = slz.validated_data["limit"]
         offset = slz.validated_data["offset"]
@@ -44,15 +52,20 @@ class ResourceViewSet(ViewSet):
         # TODO：通过这个接口这样就把所有接入系统的资源拉取到？那么相当于用户访问iam saas就可以访问到接入系统所有资源，是否合理？如何鉴权？
         # 是否有keyword，如果有，则是搜索
         if keyword:
-            parent_type, parent_id = "", ""
-            if ancestors:
-                parent_type, parent_id = ancestors[-1]["type"], ancestors[-1]["id"]
-
             count, results = self.biz.search_instance_for_topology(
-                system_id, resource_type_id, keyword, parent_type, parent_id, limit, offset
+                system_id,
+                resource_type_id,
+                keyword,
+                ancestors,
+                limit,
+                offset,
+                action_system_id,
+                action_id,
             )
         else:
-            count, results = self.biz.list_instance_for_topology(system_id, resource_type_id, ancestors, limit, offset)
+            count, results = self.biz.list_instance_for_topology(
+                system_id, resource_type_id, ancestors, limit, offset, action_system_id, action_id
+            )
 
         return Response({"count": count, "results": [i.dict() for i in results]})
 
@@ -99,5 +112,33 @@ class ResourceViewSet(ViewSet):
         offset = slz.validated_data["offset"]
 
         count, results = self.biz.list_attr_value(system_id, resource_type_id, attr, keyword, limit, offset)
+
+        return Response({"count": count, "results": [i.dict() for i in results]})
+
+
+class ResourceListFilterByDisplayNameViewSet(ViewSet):
+
+    biz = ResourceBiz()
+
+    @swagger_auto_schema(
+        operation_description="资源实例名称筛选列表",
+        request_body=ResourceQueryByDisplayNameSLZ(label="资源查询参数"),
+        responses={status.HTTP_200_OK: BaseInfoSLZ(many=True)},
+        force_page_response=True,
+        tags=["resource"],
+    )
+    def list(self, request, *args, **kwargs):
+        slz = ResourceQueryByDisplayNameSLZ(data=request.data)
+        slz.is_valid(raise_exception=True)
+
+        system_id = slz.validated_data["system_id"]
+        resource_type_id = slz.validated_data["type"]
+        display_names = slz.validated_data["display_names"]
+        action_system_id = slz.validated_data.get("action_system_id") or ""
+        action_id = slz.validated_data.get("action_id") or ""
+
+        count, results = self.biz.list_instance_by_display_names(
+            system_id, resource_type_id, display_names, action_system_id, action_id
+        )
 
         return Response({"count": count, "results": [i.dict() for i in results]})

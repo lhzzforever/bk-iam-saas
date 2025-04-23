@@ -11,7 +11,6 @@ specific language governing permissions and limitations under the License.
 """
 import os
 
-import djcelery
 import environ
 from celery.schedules import crontab
 
@@ -37,6 +36,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.sites",
     "django.contrib.messages",
+    "django.contrib.staticfiles",
     "backend.account",
     "rest_framework",
     "django_filters",
@@ -44,8 +44,16 @@ INSTALLED_APPS = [
     "corsheaders",
     "mptt",
     "django_prometheus",
-    "djcelery",
+    "django_celery_beat",
     "apigw_manager.apigw",
+    "iam.contrib.iam_migration",
+    "bk_notice_sdk",
+    "backend.common",
+    "backend.long_task",
+    "backend.audit",
+    "backend.debug",
+    "backend.iam",
+    "backend.metrics",
     "backend.apps.system",
     "backend.apps.action",
     "backend.apps.policy",
@@ -54,20 +62,19 @@ INSTALLED_APPS = [
     "backend.apps.approval",
     "backend.apps.group",
     "backend.apps.subject",
+    "backend.apps.subject_template",
     "backend.apps.template",
     "backend.apps.organization",
-    "backend.api.authorization",
-    "backend.api.admin",
-    "backend.api.management",
     "backend.apps.role",
     "backend.apps.user",
     "backend.apps.model_builder",
-    "backend.long_task",
-    "backend.audit",
-    "backend.debug",
     "backend.apps.handover",
     "backend.apps.mgmt",
     "backend.apps.temporary_policy",
+    "backend.api.authorization",
+    "backend.api.admin",
+    "backend.api.management",
+    "backend.api.bkci",
 ]
 
 # 登录中间件
@@ -111,6 +118,9 @@ TEMPLATES = [
     },
 ]
 
+# django 3.2 add
+DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
+
 # DB router
 DATABASE_ROUTERS = ["backend.audit.routers.AuditRouter"]
 
@@ -140,6 +150,9 @@ WHITENOISE_STATIC_PREFIX = "/staticfiles/"
 SESSION_COOKIE_NAME = "bkiam_sessionid"
 SESSION_COOKIE_AGE = 60 * 60 * 24  # 1天
 
+# bk_language domain
+BK_DOMAIN = env.str("BK_DOMAIN", default="")
+
 # cors
 CORS_ALLOW_CREDENTIALS = True  # 在 response 添加 Access-Control-Allow-Credentials, 即允许跨域使用 cookies
 
@@ -161,6 +174,8 @@ SWAGGER_SETTINGS = {
     "DEFAULT_AUTO_SCHEMA_CLASS": "backend.common.swagger.ResponseSwaggerAutoSchema",
 }
 
+ENABLE_SWAGGER = env.bool("BKAPP_ENABLE_SWAGGER", default=False)
+
 # CELERY 开关，使用时请改为 True，否则请保持为False。启动方式为以下两行命令：
 # worker: python manage.py celery worker -l info
 # beat: python manage.py celery beat -l info
@@ -171,14 +186,18 @@ BROKER_CONNECTION_TIMEOUT = 1  # 单位秒
 BROKER_HEARTBEAT = 60
 # CELERY 并发数，默认为 2，可以通过环境变量或者 Procfile 设置
 CELERYD_CONCURRENCY = env.int("BK_CELERYD_CONCURRENCY", default=2)
-# 与周期任务配置的定时相关UTC
-CELERY_ENABLE_UTC = True
+# 与周期任务配置的定时时区相关
+CELERY_ENABLE_UTC = False
+CELERY_TIMEZONE = "Asia/Shanghai"
+DJANGO_CELERY_BEAT_TZ_AWARE = False
 # 周期任务beat生产者来源
-CELERYBEAT_SCHEDULER = "djcelery.schedulers.DatabaseScheduler"
+CELERYBEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 # Celery队列名称
-CELERY_TASK_DEFAULT_QUEUE = "bk_iam"
+CELERY_DEFAULT_QUEUE = "bk_iam"
 # close celery hijack root logger
 CELERYD_HIJACK_ROOT_LOGGER = False
+# disable remote control
+CELERY_ENABLE_REMOTE_CONTROL = False
 # Celery 消息序列化
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
@@ -193,14 +212,18 @@ CELERY_IMPORTS = (
     "backend.apps.action.tasks",
     "backend.apps.policy.tasks",
     "backend.audit.tasks",
-    "backend.publisher.tasks",
     "backend.long_task.tasks",
     "backend.apps.temporary_policy.tasks",
+    "backend.api.bkci.tasks",
 )
 CELERYBEAT_SCHEDULE = {
     "periodic_sync_organization": {
         "task": "backend.apps.organization.tasks.sync_organization",
         "schedule": crontab(minute=0, hour=0),  # 每天凌晨执行
+    },
+    "periodic_sync_organization": {
+        "task": "backend.apps.organization.tasks.clean_subject_to_delete",
+        "schedule": crontab(minute=0, hour=2),  # 每天凌晨2时执行
     },
     "periodic_sync_new_users": {
         "task": "backend.apps.organization.tasks.sync_new_users",
@@ -218,10 +241,10 @@ CELERYBEAT_SCHEDULE = {
         "task": "backend.apps.user.tasks.user_group_policy_expire_remind",
         "schedule": crontab(minute=0, hour=11),  # 每天早上11时执行
     },
-    "periodic_role_group_expire_remind": {
-        "task": "backend.apps.role.tasks.role_group_expire_remind",
-        "schedule": crontab(minute=0, hour=11),  # 每天早上11时执行
-    },
+    # "periodic_role_group_expire_remind": {
+    #     "task": "backend.apps.role.tasks.role_group_expire_remind",
+    #     "schedule": crontab(minute=0, hour=11),  # 每天早上11时执行
+    # },
     "periodic_user_expired_policy_cleanup": {
         "task": "backend.apps.user.tasks.user_cleanup_expired_policy",
         "schedule": crontab(minute=0, hour=2),  # 每天凌晨2时执行
@@ -236,7 +259,7 @@ CELERYBEAT_SCHEDULE = {
     },
     "periodic_generate_action_aggregate": {
         "task": "backend.apps.action.tasks.generate_action_aggregate",
-        "schedule": crontab(minute=0, hour=1),  # 每天凌晨1时执行
+        "schedule": crontab(minute=0, hour="*"),  # 每小时执行
     },
     "periodic_execute_model_change_event": {
         "task": "backend.apps.policy.tasks.execute_model_change_event",
@@ -248,7 +271,7 @@ CELERYBEAT_SCHEDULE = {
     },
     "periodic_retry_long_task": {
         "task": "backend.long_task.tasks.retry_long_task",
-        "schedule": crontab(minute=0, hour=3),  # 每天凌晨3时执行
+        "schedule": crontab(minute="*/30"),  # 每30分钟执行一次
     },
     "periodic_delete_unreferenced_expressions": {
         "task": "backend.apps.policy.tasks.delete_unreferenced_expressions",
@@ -276,6 +299,14 @@ if ENABLE_INIT_GRADE_MANAGER:
         "schedule": crontab(minute="*/2"),  # 每2分钟执行一次
     }
 
+# 是否开启初始化BCS一级/二级管理员
+ENABLE_INIT_BCS_PROJECT_MANAGER = env.bool("BKAPP_ENABLE_INIT_BCS_PROJECT_MANAGER", default=False)
+if ENABLE_INIT_BCS_PROJECT_MANAGER:
+    CELERYBEAT_SCHEDULE["init_bcs_manager"] = {
+        "task": "backend.apps.role.tasks.InitBcsProjectManagerTask",
+        "schedule": crontab(minute="*/2"),  # 每2分钟执行一次
+    }
+
 # 环境变量中有rabbitmq时使用rabbitmq, 没有时使用BK_BROKER_URL
 # V3 Smart可能会配RABBITMQ_HOST或者BK_BROKER_URL
 # V2 Smart只有BK_BROKER_URL
@@ -289,8 +320,6 @@ if "RABBITMQ_HOST" in env:
     )
 else:
     BROKER_URL = env.str("BK_BROKER_URL", default="")
-# 使用djcelery配合celery，支持周期任务通过DB设置等场景
-djcelery.setup_loader()
 
 # tracing: sentry support
 SENTRY_DSN = env.str("SENTRY_DSN", default="")
@@ -337,10 +366,8 @@ BK_IAM_ENGINE_HOST_TYPE = env.str("BKAPP_IAM_ENGINE_HOST_TYPE", default="direct"
 # 授权对象授权用户组, 模板的最大限制
 SUBJECT_AUTHORIZATION_LIMIT = {
     # -------- 用户 ---------
-    # 用户能加入的用户组的最大数量
-    "default_subject_group_limit": env.int("BKAPP_DEFAULT_SUBJECT_GROUP_LIMIT", default=100),
     # 用户能加入的分级管理员的最大数量
-    "subject_grade_manager_limit": env.int("BKAPP_SUBJECT_GRADE_MANAGER_LIMIT", default=100),
+    "subject_grade_manager_limit": env.int("BKAPP_SUBJECT_GRADE_MANAGER_LIMIT", default=500),
     # -------- 用户组 ---------
     # 用户组能加入同一个系统的权限模板的最大数量
     "default_subject_system_template_limit": env.int("BKAPP_DEFAULT_SUBJECT_SYSTEM_TEMPLATE_LIMIT", default=10),
@@ -348,20 +375,26 @@ SUBJECT_AUTHORIZATION_LIMIT = {
         # key: system_id, value: int
     },  # 系统可自定义配置的 用户组能加入同一个系统的权限模板的最大数量
     # 用户组成员最大数量
-    "group_member_limit": env.int("BKAPP_GROUP_MEMBER_LIMIT", default=500),
+    "group_member_limit": env.int("BKAPP_GROUP_MEMBER_LIMIT", default=1000),
     # 用户组单次授权模板数
     "group_auth_template_once_limit": env.int("BKAPP_GROUP_AUTH_TEMPLATE_ONCE_LIMIT", default=10),
     # 用户组单次授权的系统数
     "group_auth_system_once_limit": env.int("BKAPP_GROUP_AUTH_SYSTEM_ONCE_LIMIT", default=10),
     # -------- 分级管理员 ---------
     # 一个分级管理员可创建的用户组个数
-    "grade_manager_group_limit": env.int("BKAPP_GRADE_MANAGER_GROUP_LIMIT", default=100),
+    "grade_manager_group_limit": env.int("BKAPP_GRADE_MANAGER_GROUP_LIMIT", default=10000),
     # 一个分级管理员可添加的成员个数
-    "grade_manager_member_limit": env.int("BKAPP_GRADE_MANAGER_MEMBER_LIMIT", default=100),
+    "grade_manager_member_limit": env.int("BKAPP_GRADE_MANAGER_MEMBER_LIMIT", default=1000),
     # 默认每个系统可创建的分级管理数量
-    "default_grade_manager_of_system_limit": env.int("BKAPP_DEFAULT_GRADE_MANAGER_OF_SYSTEM_LIMIT", default=100),
+    "default_grade_manager_of_system_limit": env.int("BKAPP_DEFAULT_GRADE_MANAGER_OF_SYSTEM_LIMIT", default=500),
     # 可配置单独指定某些系统可创建的分级管理员数量 其值的格式为：system_id1:number1,system_id2:number2,...
-    "grade_manager_of_specified_systems_limit": env.str("BKAPP_GRADE_MANAGER_OF_SPECIFIED_SYSTEMS_LIMIT", default=""),
+    "grade_manager_of_specified_systems_limit": env.str(
+        "BKAPP_GRADE_MANAGER_OF_SPECIFIED_SYSTEMS_LIMIT", default="bk_ci_rbac:30000,bk_lesscode:5000"
+    ),
+    # 人员模版最大成员数量
+    "subject_template_member_limit": env.int("BKAPP_SUBJECT_TEMPLATE_MEMBER_LIMIT", default=1000),
+    # 一个分级管理员可创建的人员模版个数
+    "grade_manager_subject_template_limit": env.int("BKAPP_GRADE_MANAGER_SUBJECT_TEMPLATE_LIMIT", default=10000),
 }
 # 授权的实例最大数量限制
 AUTHORIZATION_INSTANCE_LIMIT = env.int("BKAPP_AUTHORIZATION_INSTANCE_LIMIT", default=200)
@@ -377,17 +410,18 @@ MAX_EXPIRED_POLICY_DELETE_TIME = 365 * 24 * 60 * 60  # 1年
 MAX_EXPIRED_TEMPORARY_POLICY_DELETE_TIME = 3 * 24 * 60 * 60  # 3 Days
 # 接入系统的资源实例ID最大长度，默认36（已存在长度为36的数据）
 MAX_LENGTH_OF_RESOURCE_ID = env.int("BKAPP_MAX_LENGTH_OF_RESOURCE_ID", default=36)
-
-# 用于发布订阅的Redis
-PUB_SUB_REDIS_HOST = env.str("BKAPP_PUB_SUB_REDIS_HOST", default="")
-PUB_SUB_REDIS_PORT = env.str("BKAPP_PUB_SUB_REDIS_PORT", default="")
-PUB_SUB_REDIS_PASSWORD = env.str("BKAPP_PUB_SUB_REDIS_PASSWORD", default="")
-PUB_SUB_REDIS_DB = env.int("BKAPP_PUB_SUB_REDIS_DB", default=0)
+# 被删除的subject最长保留天数
+SUBJECT_DELETE_DAYS = env.int("BKAPP_SUBJECT_DELETE_DAYS", default=30)
 
 # 前端页面功能开关
 ENABLE_FRONT_END_FEATURES = {
     "enable_model_build": env.bool("BKAPP_ENABLE_FRONT_END_MODEL_BUILD", default=False),
     "enable_permission_handover": env.bool("BKAPP_ENABLE_FRONT_END_PERMISSION_HANDOVER", default=True),
+    "enable_temporary_policy": env.bool("BKAPP_ENABLE_FRONT_END_TEMPORARY_POLICY", default=False),
+    "enable_group_instance_search": env.bool("BKAPP_ENABLE_FRONT_END_GROUP_INSTANCE_SEARCH", default=False),
+    "enable_organization_count": env.bool("BKAPP_ENABLE_FRONT_END_ORGANIZATION_COUNT", default=False),
+    "enable_assistant": env.bool("BKAPP_ENABLE_FRONT_END_ASSISTANT", default=False),
+    "enable_bk_notice": env.bool("BKAPP_ENABLE_BK_NOTICE", default=False),
 }
 
 # Open API接入APIGW后，需要对APIGW请求来源认证，使用公钥解开jwt
@@ -396,7 +430,7 @@ BK_APIGW_PUBLIC_KEY = env.str("BKAPP_APIGW_PUBLIC_KEY", default="")
 # apigateway 相关配置
 # NOTE: it sdk will read settings.APP_CODE and settings.APP_SECRET, so you should set it
 BK_APIGW_NAME = "bk-iam"
-BK_API_URL_TMPL = env.str("BK_API_URL_TMPL", default="")
+BK_API_URL_TMPL = env.str("BK_API_URL_TMPL", default="http://localhost:8080/api/{api_name}/")
 BK_IAM_BACKEND_SVC = env.str("BK_IAM_BACKEND_SVC", default="bkiam-web")
 BK_IAM_SAAS_API_SVC = env.str("BK_IAM_SAAS_API_SVC", default="bkiam-saas-api")
 BK_IAM_ENGINE_SVC = env.str("BK_IAM_ENGINE_SVC", default="bkiam-search-engine")
@@ -405,9 +439,49 @@ BK_APIGW_RESOURCE_DOCS_BASE_DIR = os.path.join(BASE_DIR, "resources/apigateway/d
 # Requests pool config
 REQUESTS_POOL_CONNECTIONS = env.int("REQUESTS_POOL_CONNECTIONS", default=20)
 REQUESTS_POOL_MAXSIZE = env.int("REQUESTS_POOL_MAXSIZE", default=20)
+REQUESTS_MAX_RETRIES = env.int("REQUESTS_MAX_RETRIES", default=3)
 
 # Init Grade Manger system list
 INIT_GRADE_MANAGER_SYSTEM_LIST = env.list(
     "INIT_GRADE_MANAGER_SYSTEM_LIST",
-    default=["bk_job", "bk_cmdb", "bk_monitorv3", "bk_log_search", "bk_sops", "bk_nodeman", "bk_gsekit"],
+    default=["bk_job", "bk_cmdb", "bk_monitorv3", "bk_log_search", "bk_sops", "bk_nodeman", "bk_gsekit", "bk-bscp"],
 )
+
+# disable display systems
+HIDDEN_SYSTEM_LIST = env.list("BKAPP_HIDDEN_SYSTEM_LIST", default=["bk_iam", "bk_ci_rbac"])
+
+
+# role resource relation type 用于自定期权限申请的权限审批
+ROLE_RESOURCE_RELATION_TYPE = [
+    {"system_id": "bk_cmdb", "type": "biz"},
+    {"system_id": "bk_sops", "type": "project"},
+    {"system_id": "bk_bcs_app", "type": "project"},
+    {"system_id": "bk_monitorv3", "type": "space"},
+    {"system_id": "bk_paas3", "type": "application"},
+]
+
+ROLE_RESOURCE_RELATION_TYPE_SET = {(item["system_id"], item["type"]) for item in ROLE_RESOURCE_RELATION_TYPE}
+
+
+# 对接审计中心相关配置, 包括注册权限模型到权限中心后台的配置
+BK_IAM_SYSTEM_ID = "bk_iam"
+if BK_IAM_HOST_TYPE == "direct":
+    BK_IAM_USE_APIGATEWAY = False
+    BK_IAM_INNER_HOST = BK_IAM_HOST
+elif BK_IAM_HOST_TYPE == "apigateway":
+    BK_IAM_USE_APIGATEWAY = True
+    BK_IAM_APIGATEWAY_URL = BK_IAM_HOST
+BK_IAM_MIGRATION_APP_NAME = "iam"
+BK_IAM_MIGRATION_JSON_PATH = "resources/iam/"
+
+
+# IAM metric 接口密码
+BK_IAM_METRIC_TOKEN = env.str("BK_IAM_METRIC_TOKEN", default="")
+
+
+# BCS初始化ROLE网关api配置
+BK_BCS_APIGW_URL = env.str("BK_BCS_APIGW_URL", default="")
+
+
+# 文档地址
+BK_DOCS_URL_PREFIX = env.str("BK_DOCS_URL_PREFIX", default="https://bk.tencent.com/docs/")

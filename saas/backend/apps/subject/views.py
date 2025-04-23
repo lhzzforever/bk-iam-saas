@@ -15,20 +15,27 @@ from rest_framework.viewsets import GenericViewSet
 
 from backend.account.permissions import role_perm_class
 from backend.account.serializers import AccountRoleSLZ
+from backend.apps.group.audit import GroupMemberDeleteAuditProvider
+from backend.apps.group.models import Group
+from backend.apps.group.serializers import GroupSearchSLZ
 from backend.apps.policy.serializers import PolicyDeleteSLZ, PolicyPartDeleteSLZ, PolicySLZ, PolicySystemSLZ
+from backend.apps.user.serializers import GroupSLZ, SubjectTemplateGroupSLZ, UserPolicySearchSLZ
+from backend.apps.user.views import (
+    SubjectGroupSearchMixin,
+    UserDepartmentSubjectTemplateGroupViewSet,
+    UserPolicySearchViewSet,
+    UserSubjectTemplateGroupViewSet,
+)
 from backend.audit.audit import audit_context_setter, view_audit_decorator
 from backend.biz.group import GroupBiz
 from backend.biz.policy import ConditionBean, PolicyOperationBiz, PolicyQueryBiz
 from backend.biz.role import RoleBiz
+from backend.common.pagination import CustomPageNumberPagination
 from backend.common.serializers import SystemQuerySLZ
 from backend.service.constants import PermissionCodeEnum, SubjectRelationType
 from backend.service.models import Subject
 
-from .audit import (
-    SubjectGroupDeleteAuditProvider,
-    SubjectPolicyDeleteAuditProvider,
-    SubjectTemporaryPolicyDeleteAuditProvider,
-)
+from .audit import SubjectPolicyDeleteAuditProvider, SubjectTemporaryPolicyDeleteAuditProvider
 from .serializers import QueryRoleSLZ, SubjectGroupSLZ, UserRelationSLZ
 
 
@@ -36,7 +43,7 @@ class SubjectGroupViewSet(GenericViewSet):
 
     permission_classes = [role_perm_class(PermissionCodeEnum.MANAGE_ORGANIZATION.value)]
 
-    pagination_class = None  # 去掉swagger中的limit offset参数
+    pagination_class = CustomPageNumberPagination
 
     biz = GroupBiz()
 
@@ -47,8 +54,11 @@ class SubjectGroupViewSet(GenericViewSet):
     )
     def list(self, request, *args, **kwargs):
         subject = Subject(type=kwargs["subject_type"], id=kwargs["subject_id"])
-        relations = self.biz.list_subject_group(subject, is_recursive=True)
-        return Response([one.dict() for one in relations])
+        # 分页参数
+        limit, offset = CustomPageNumberPagination().get_limit_offset_pair(request)
+        count, relations = self.biz.list_paging_subject_group(subject, limit=limit, offset=offset)
+        slz = GroupSLZ(instance=relations, many=True)
+        return Response({"count": count, "results": slz.data})
 
     @swagger_auto_schema(
         operation_description="我的权限-退出用户组",
@@ -56,7 +66,7 @@ class SubjectGroupViewSet(GenericViewSet):
         responses={status.HTTP_200_OK: serializers.Serializer()},
         tags=["subject"],
     )
-    @view_audit_decorator(SubjectGroupDeleteAuditProvider)
+    @view_audit_decorator(GroupMemberDeleteAuditProvider)
     def destroy(self, request, *args, **kwargs):
         subject = Subject(type=kwargs["subject_type"], id=kwargs["subject_id"])
 
@@ -69,9 +79,31 @@ class SubjectGroupViewSet(GenericViewSet):
             self.biz.remove_members(data["id"], [subject])
 
             # 写入审计上下文
-            audit_context_setter(subject=subject, group=Subject.parse_obj(data))
+            group = Group.objects.filter(id=int(data["id"])).first()
+            audit_context_setter(group=group, members=[subject.dict()])
 
         return Response({})
+
+
+class SubjectDepartmentGroupViewSet(GenericViewSet):
+
+    permission_classes = [role_perm_class(PermissionCodeEnum.MANAGE_ORGANIZATION.value)]
+
+    pagination_class = None
+
+    biz = GroupBiz()
+
+    @swagger_auto_schema(
+        operation_description="我的权限-继承自部门的用户组列表",
+        responses={status.HTTP_200_OK: SubjectGroupSLZ(label="用户组", many=True)},
+        tags=["subject"],
+    )
+    def list(self, request, *args, **kwargs):
+        subject = Subject(type=kwargs["subject_type"], id=kwargs["subject_id"])
+        # 目前只能查询所有的, 暂时不支持分页, 如果有性能问题, 需要考虑优化
+        relations = self.biz.list_all_user_department_group(subject)
+        slz = GroupSLZ(instance=relations, many=True)
+        return Response(slz.data)
 
 
 class SubjectSystemViewSet(GenericViewSet):
@@ -174,7 +206,7 @@ class SubjectPolicyViewSet(GenericViewSet):
         condition = data["condition"]
 
         # 为避免需要忽略的变量与国际化翻译变量"_"冲突，所以使用"__"
-        system_id, __ = self.policy_query_biz.get_system_policy(subject, policy_id)
+        system_id = self.policy_query_biz.get_policy_system_by_id(subject, policy_id)
         update_policy = self.policy_operation_biz.delete_partial(
             system_id,
             subject,
@@ -208,8 +240,7 @@ class SubjectPolicyResourceGroupDeleteViewSet(GenericViewSet):
         resource_group_id = kwargs["resource_group_id"]
         subject = Subject(type=kwargs["subject_type"], id=kwargs["subject_id"])
 
-        # 为避免需要忽略的变量与国际化翻译变量"_"冲突，所以使用"__"
-        system_id, __ = self.policy_query_biz.get_system_policy(subject, policy_id)
+        system_id = self.policy_query_biz.get_policy_system_by_id(subject, policy_id)
         # 删除权限
         update_policy = self.policy_operation_biz.delete_by_resource_group_id(
             system_id, subject, policy_id, resource_group_id
@@ -238,7 +269,7 @@ class SubjectRoleViewSet(GenericViewSet):
         slz.is_valid(raise_exception=True)
         with_perm = slz.validated_data["with_perm"]
 
-        user_roles = self.biz.list_user_role(request.user.username, with_perm)
+        user_roles = self.biz.list_user_role(request.user.username, with_perm, with_hidden=False)
         return Response([one.dict() for one in user_roles])
 
 
@@ -313,3 +344,85 @@ class SubjectTemporaryPolicySystemViewSet(GenericViewSet):
         data = self.biz.list_temporary_system_counter_by_subject(subject)
 
         return Response([one.dict() for one in data])
+
+
+class SubjectGroupSearchViewSet(SubjectGroupSearchMixin):
+    @swagger_auto_schema(
+        operation_description="搜索subject用户组列表",
+        request_body=GroupSearchSLZ(label="用户组搜索"),
+        responses={status.HTTP_200_OK: SubjectGroupSLZ(label="用户组", many=True)},
+        tags=["subject"],
+    )
+    def search(self, request, *args, **kwargs):
+        return super().search(request, *args, **kwargs)
+
+    def get_subject(self, request, kwargs):
+        subject = Subject(type=kwargs["subject_type"], id=kwargs["subject_id"])
+        return subject
+
+
+class SubjectDepartmentGroupSearchViewSet(SubjectGroupSearchMixin):
+    @swagger_auto_schema(
+        operation_description="搜索Subject部门用户组列表",
+        request_body=GroupSearchSLZ(label="用户组搜索"),
+        responses={status.HTTP_200_OK: SubjectGroupSLZ(label="用户组", many=True)},
+        tags=["subject"],
+    )
+    def search(self, request, *args, **kwargs):
+        return super().search(request, *args, **kwargs)
+
+    def get_subject(self, request, kwargs):
+        subject = Subject(type=kwargs["subject_type"], id=kwargs["subject_id"])
+        return subject
+
+    def get_group_dict(self, subject: Subject):
+        groups = self.biz.list_all_user_department_group(subject)
+        return {one.id: one for one in groups}
+
+    def get_page_result(self, group_dict, page):
+        return [group_dict[one.id] for one in page]
+
+
+class SubjectPolicySearchViewSet(UserPolicySearchViewSet):
+    @swagger_auto_schema(
+        operation_description="搜索subject权限策略列表",
+        request_body=UserPolicySearchSLZ(label="用户组搜索"),
+        responses={status.HTTP_200_OK: PolicySLZ(label="策略", many=True)},
+        tags=["subject"],
+    )
+    def search(self, request, *args, **kwargs):
+        return super().search(request, *args, **kwargs)
+
+    def get_subject(self, request, kwargs):
+        subject = Subject(type=kwargs["subject_type"], id=kwargs["subject_id"])
+        return subject
+
+
+class SubjectTemplateGroupViewSet(UserSubjectTemplateGroupViewSet):
+    @swagger_auto_schema(
+        operation_description="我的权限-人员模版用户组列表",
+        request_body=GroupSearchSLZ(label="用户组搜索"),
+        responses={status.HTTP_200_OK: SubjectTemplateGroupSLZ(label="用户组", many=True)},
+        tags=["subject"],
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    def get_subject(self, request, kwargs):
+        subject = Subject(type=kwargs["subject_type"], id=kwargs["subject_id"])
+        return subject
+
+
+class DepartmentSubjectTemplateGroupViewSet(UserDepartmentSubjectTemplateGroupViewSet):
+    @swagger_auto_schema(
+        operation_description="我的权限-部门人员模版用户组列表",
+        request_body=GroupSearchSLZ(label="用户组搜索"),
+        responses={status.HTTP_200_OK: SubjectTemplateGroupSLZ(label="用户组", many=True)},
+        tags=["subject"],
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    def get_subject(self, request, kwargs):
+        subject = Subject(type=kwargs["subject_type"], id=kwargs["subject_id"])
+        return subject

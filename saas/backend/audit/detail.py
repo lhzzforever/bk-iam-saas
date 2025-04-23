@@ -16,13 +16,14 @@ from pydantic.tools import parse_obj_as
 from backend.apps.group.models import Group
 from backend.apps.organization.models import User
 from backend.apps.role.models import Role
+from backend.apps.subject_template.models import SubjectTemplate
 from backend.apps.template.models import PermTemplate
 from backend.audit.models import Event
 from backend.biz.subject import SubjectInfoList
 from backend.biz.system import SystemBiz
 from backend.service.action import ActionService
 from backend.service.approval import ApprovalProcessService
-from backend.service.constants import ApplicationTypeEnum
+from backend.service.constants import ApplicationType, GroupMemberType
 from backend.service.models import Subject
 from backend.util.time import timestamp_to_local
 
@@ -67,7 +68,12 @@ class GroupTemplateProvider(BaseProvider):
 class GroupMemberProvider(BaseProvider):
     @property
     def sub_objects(self) -> List:
-        subject_list = SubjectInfoList(parse_obj_as(List[Subject], self.event.extra["members"]))
+        subject_list = SubjectInfoList(
+            parse_obj_as(
+                List[Subject],
+                [one for one in self.event.extra["members"] if one["type"] != GroupMemberType.TEMPLATE.value],
+            )
+        )
         objects = []
         for subject in subject_list.subjects:
             data = {"type": subject.type, "id": subject.id, "name": subject.name}
@@ -75,6 +81,18 @@ class GroupMemberProvider(BaseProvider):
             if subject.type == AuditObjectType.DEPARTMENT.value:
                 data["name"] = subject.full_name
             objects.append(data)
+
+        subject_template_ids = [
+            one["id"] for one in self.event.extra["members"] if one["type"] == GroupMemberType.TEMPLATE.value
+        ]
+        if not subject_template_ids:
+            return objects
+
+        subject_templates = SubjectTemplate.objects.filter(id__in=subject_template_ids)
+        for subject_template in subject_templates:
+            data = {"type": GroupMemberType.TEMPLATE.value, "id": subject_template.id, "name": subject_template.name}
+            objects.append(data)
+
         return objects
 
 
@@ -99,15 +117,6 @@ class GroupTransferProvider(BaseProvider):
             objects.append({"type": AuditObjectType.ROLE.value, "id": str(role.id), "name": role.name})
 
         return objects
-
-
-class SubjectGroupProvider(BaseProvider):
-    @property
-    def sub_objects(self) -> List:
-        extra = self.event.extra
-
-        group = Group.objects.filter(id=extra["group"]["id"]).first()
-        return [{"type": extra["group"]["type"], "id": extra["group"]["id"], "name": group.name if group else ""}]
 
 
 class SubjectPoliciesProvider(BaseProvider):
@@ -184,18 +193,6 @@ class RoleUpdateProvider(BaseProvider):
         return _("名称: {}, 描述: {}").format(extra["name"], extra["description"])
 
 
-class UserRoleDeleteProvider(BaseProvider):
-    @property
-    def sub_objects(self) -> List:
-        extra = self.event.extra
-        role = Role.objects.filter(id=extra["role_id"]).first()
-        return (
-            [{"type": AuditObjectType.ROLE.value, "id": str(role.id), "name": role.name, "name_en": role.name_en}]
-            if role
-            else []
-        )
-
-
 class RoleMemberProvider(BaseProvider):
     @property
     def sub_objects(self) -> List:
@@ -268,7 +265,7 @@ class ApprovalGlobalProvider(ApprovalNameMixin, BaseProvider):
     @property
     def description(self) -> str:
         type_ = self.event.extra["type"]
-        type_name = dict(ApplicationTypeEnum.get_choices()).get(type_)
+        type_name = dict(ApplicationType.get_choices()).get(type_)
         process_id = self.event.extra["process_id"]
         process_name = self.get_process_name(process_id)
         return f"设置 [{type_name}] 类型全局审批流程: {process_name}(#{process_id})"
@@ -294,6 +291,25 @@ class ApprovalActionProvider(ApprovalNameMixin, BaseProvider):
         return [{"type": AuditObjectType.ACTION.value, "id": ac.id, "name": ac.name} for ac in actions]
 
 
+class ActionSensitivityLevelProvider(BaseProvider):
+    system_biz = SystemBiz()
+    action_svc = ActionService()
+
+    @property
+    def description(self) -> str:
+        system_id = self.event.extra["system_id"]
+        system = self.system_biz.get(system_id)
+        sensitivity_level = self.event.extra["sensitivity_level"]
+        return f"设置 [{system.name}] 系统操作敏感等级: {sensitivity_level}"
+
+    @property
+    def sub_objects(self) -> List:
+        system_id = self.event.extra["system_id"]
+        action_ids = self.event.extra["action_ids"]
+        actions = self.action_svc.new_action_list(system_id).filter(action_ids)
+        return [{"type": AuditObjectType.ACTION.value, "id": ac.id, "name": ac.name} for ac in actions]
+
+
 class ApprovalGroupProvider(ApprovalNameMixin, BaseProvider):
     @property
     def description(self) -> str:
@@ -306,6 +322,36 @@ class ApprovalGroupProvider(ApprovalNameMixin, BaseProvider):
         group_ids = self.event.extra["group_ids"]
         groups = Group.objects.filter(id__in=group_ids)
         return [{"type": AuditObjectType.GROUP.value, "id": str(group.id), "name": group.name} for group in groups]
+
+
+class SubjectTemplateUpdateProvider(BaseProvider):
+    @property
+    def description(self) -> str:
+        extra = self.event.extra
+        return _("名称: {}, 描述: {}").format(extra["name"], extra["description"])
+
+
+class SubjectTemplateMemberProvider(BaseProvider):
+    @property
+    def sub_objects(self) -> List:
+        subject_list = SubjectInfoList(parse_obj_as(List[Subject], self.event.extra["subjects"]))
+        objects = []
+        for subject in subject_list.subjects:
+            data = {"type": subject.type, "id": subject.id, "name": subject.name}
+
+            if subject.type == AuditObjectType.DEPARTMENT.value:
+                data["name"] = subject.full_name
+            objects.append(data)
+        return objects
+
+
+class SubjectTemplateGroupProvider(BaseProvider):
+    @property
+    def sub_objects(self) -> List:
+        group = self.event.extra.get("group", None)
+        if not group:
+            return []
+        return [{"type": AuditObjectType.GROUP.value, "id": str(group.id), "name": group.name}]
 
 
 class EventDetailExtra:
@@ -323,11 +369,9 @@ class EventDetailExtra:
         AuditType.GROUP_POLICY_DELETE.value: SubjectPoliciesProvider,
         AuditType.GROUP_POLICY_UPDATE.value: SubjectPoliciesUpdateProvider,
         # department/user
-        AuditType.DEPARTMENT_GROUP_DELETE.value: SubjectGroupProvider,
-        AuditType.USER_GROUP_DELETE.value: SubjectGroupProvider,
         AuditType.USER_POLICY_UPDATE.value: SubjectPoliciesProvider,
         AuditType.USER_POLICY_CREATE.value: SubjectPoliciesProvider,
-        AuditType.USER_ROLE_DELETE.value: UserRoleDeleteProvider,
+        AuditType.USER_POLICY_DELETE.value: SubjectPoliciesProvider,
         AuditType.USER_TEMPORARY_POLICY_CREATE.value: SubjectPoliciesProvider,
         AuditType.USER_TEMPORARY_POLICY_DELETE.value: SubjectPoliciesProvider,
         # template
@@ -353,6 +397,14 @@ class EventDetailExtra:
         AuditType.APPROVAL_GLOBAL_UPDATE.value: ApprovalGlobalProvider,
         AuditType.APPROVAL_ACTION_UPDATE.value: ApprovalActionProvider,
         AuditType.APPROVAL_GROUP_UPDATE.value: ApprovalGroupProvider,
+        AuditType.ACTION_SENSITIVITY_LEVEL_UPDATE.value: ActionSensitivityLevelProvider,
+        # subject template
+        AuditType.SUBJECT_TEMPLATE_CREATE.value: BaseProvider,
+        AuditType.SUBJECT_TEMPLATE_UPDATE.value: SubjectTemplateUpdateProvider,
+        AuditType.SUBJECT_TEMPLATE_DELETE.value: BaseProvider,
+        AuditType.SUBJECT_TEMPLATE_MEMBER_CREATE.value: SubjectTemplateMemberProvider,
+        AuditType.SUBJECT_TEMPLATE_MEMBER_DELETE.value: SubjectTemplateMemberProvider,
+        AuditType.SUBJECT_TEMPLATE_GROUP_DELETE.value: SubjectTemplateGroupProvider,
     }
 
     def __init__(self, event: Event):

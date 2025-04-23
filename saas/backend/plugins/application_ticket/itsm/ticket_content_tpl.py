@@ -46,7 +46,9 @@ FORM_SCHEMES = {
         "attrs": {
             "column": [
                 {"name": "ID", "type": "text", "key": "id"},
+                {"name": "管理空间", "type": "text", "key": "role_name"},
                 {"name": "用户组", "key": "group_info", "scheme": FormSchemeEnum.BASE_TABLE_TEXT.value},
+                {"name": "最高敏感等级", "type": "text", "key": "highest_sensitivity_level"},
                 {"name": "描述", "type": "text", "key": "desc"},
                 {"name": "申请期限", "type": "text", "key": "expired_display"},
             ]
@@ -70,6 +72,7 @@ FORM_SCHEMES = {
         "attrs": {
             "column": [
                 {"name": "操作", "type": "text", "key": "action"},
+                {"name": "敏感等级", "type": "text", "key": "sensitivity_level"},
                 {
                     "name": "资源组合",
                     "key": "resource_groups",

@@ -50,17 +50,20 @@ from .group import GroupAttributes
 from .instance_selection import ChainNode, InstanceSelection, PathResourceType, RawInstanceSelection
 from .model_event import ModelEvent
 from .policy import (
+    AbacPolicyChangeContent,
     Attribute,
     BackendThinPolicy,
     Condition,
     Instance,
     PathNode,
     Policy,
-    PolicyIDExpiredAt,
+    RbacPolicyChangeContent,
     RelatedResource,
     ResourceGroup,
     ResourceGroupList,
     SystemCounter,
+    UniversalPolicy,
+    UniversalPolicyChangedContent,
     Value,
 )
 from .resource import (
@@ -73,7 +76,7 @@ from .resource import (
 )
 from .resource_creator_action import ResourceCreatorActionConfig, ResourceCreatorActionConfigItem
 from .resource_type import ResourceType, ResourceTypeDict
-from .subject import Subject
+from .subject import Applicant, Subject
 from .system import System
 
 __all__ = [
@@ -131,7 +134,6 @@ __all__ = [
     "BackendThinPolicy",
     "Policy",
     "SystemCounter",
-    "PolicyIDExpiredAt",
     "Subject",
     "Condition",
     "Instance",
@@ -142,4 +144,9 @@ __all__ = [
     "ResourceGroup",
     "ResourceGroupList",
     "ModelEvent",
+    "UniversalPolicy",
+    "UniversalPolicyChangedContent",
+    "RbacPolicyChangeContent",
+    "AbacPolicyChangeContent",
+    "Applicant",
 ]

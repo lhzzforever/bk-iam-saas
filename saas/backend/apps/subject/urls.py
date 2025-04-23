@@ -23,6 +23,11 @@ urlpatterns = [
                     name="subject.group",
                 ),
                 path(
+                    "departments/-/groups/",
+                    views.SubjectDepartmentGroupViewSet.as_view({"get": "list"}),
+                    name="subject.department.group",
+                ),
+                path(
                     "roles/",
                     views.SubjectRoleViewSet.as_view({"get": "list"}),
                     name="subject.roles_with_permission",
@@ -54,6 +59,31 @@ urlpatterns = [
                     "temporary_policies/systems/",
                     views.SubjectTemporaryPolicySystemViewSet.as_view({"get": "list"}),
                     name="subject.temporary_policies_systems",
+                ),
+                path(
+                    "groups/search/",
+                    views.SubjectGroupSearchViewSet.as_view({"post": "search"}),
+                    name="subject.group_search",
+                ),
+                path(
+                    "departments/-/groups/search/",
+                    views.SubjectDepartmentGroupSearchViewSet.as_view({"post": "search"}),
+                    name="subject.department.group_search",
+                ),
+                path(
+                    "policies/search/",
+                    views.SubjectPolicySearchViewSet.as_view({"post": "search"}),
+                    name="subject.policy_search",
+                ),
+                path(
+                    "subject_template_groups/",
+                    views.SubjectTemplateGroupViewSet.as_view({"post": "list"}),
+                    name="subject.subject_template_group",
+                ),
+                path(
+                    "departments/-/subject_template_groups/",
+                    views.DepartmentSubjectTemplateGroupViewSet.as_view({"post": "list"}),
+                    name="subject.department.subject_template_group",
                 ),
             ]
         ),

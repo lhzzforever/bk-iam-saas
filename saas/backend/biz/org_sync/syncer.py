@@ -13,8 +13,9 @@ specific language governing permissions and limitations under the License.
 import datetime
 
 from backend.apps.organization.constants import NEW_USER_AUTO_SYNC_COUNT_LIMIT
-from backend.apps.organization.models import User
+from backend.apps.organization.models import Department, DepartmentMember, SubjectToDelete, User
 from backend.component import iam, usermgr
+from backend.service.constants import SubjectType
 
 
 class Syncer:
@@ -36,7 +37,9 @@ class Syncer:
             return
         # TODO: 考虑并发情况，需要添加分布式锁
         # 2. 查询UserMgr API
-        user_info = usermgr.retrieve_user(username)
+        user_info = usermgr.retrieve_user(
+            username, fields="id,username,display_name,staff_status,category_id,departments"
+        )
         # 3. 同步到DB
         user, is_created = User.objects.get_or_create(
             id=user_info["id"],
@@ -47,9 +50,34 @@ class Syncer:
                 "category_id": user_info["category_id"],
             },
         )
+        if not is_created:
+            return
+
         # 4. 同步到IAM后台
-        if is_created:
-            iam.create_subjects([{"type": "user", "id": user.username, "name": user.display_name}])
+        iam.create_subjects([{"type": "user", "id": user.username, "name": user.display_name}])
+
+        # 5. 同步部门
+        department_ids = [one["id"] for one in user_info["departments"]]
+        if not department_ids:
+            return
+
+        departments = Department.objects.filter(id__in=department_ids)
+        if not departments:
+            return
+
+        # 创建用户与部门关系
+        DepartmentMember.objects.bulk_create(
+            [DepartmentMember(department_id=department.id, user_id=user_info["id"]) for department in departments]
+        )
+
+        department_id_set = set(department_ids)
+        for dept in departments:
+            for i in dept.parse_ancestors():
+                department_id_set.add(i["id"])
+
+        iam.create_subject_departments_by_auto_paging(
+            [{"id": user.username, "departments": [str(_id) for _id in department_id_set]}]
+        )
 
     def sync_new_users(self):
         """
@@ -59,15 +87,9 @@ class Syncer:
         3. 小于一定数量的新增用户，则直接单用户同步
         """
         # 查询5分钟内新增用户
-        users = usermgr.list_new_user(datetime.datetime.utcnow(), 5)
+        users = usermgr.list_new_user(datetime.datetime.utcnow(), 20)
         # 如果没有则无需执行
         if not users:
-            return
-        # 如果用户大于一定量，则直接全量同步
-        if len(users) > NEW_USER_AUTO_SYNC_COUNT_LIMIT:
-            from backend.apps.organization.tasks import sync_organization
-
-            sync_organization.delay()
             return
 
         # 去除已存在的用户
@@ -91,6 +113,17 @@ class Syncer:
         User.objects.bulk_create(created_users, batch_size=1000)
         # 后台新建
         iam.create_subjects([{"type": "user", "id": user["username"], "name": user["display_name"]} for user in users])
+
+        # 移除待删除的用户
+        SubjectToDelete.objects.filter(
+            subject_type=SubjectType.USER.value, subject_id__in=[u.username for u in created_users]
+        ).delete()
+
+        # 如果用户大于一定量，则直接全量同步
+        if len(created_users) > NEW_USER_AUTO_SYNC_COUNT_LIMIT:
+            from backend.apps.organization.tasks import sync_organization
+
+            sync_organization.delay()
 
     # def sync_full_organization(self):
     #     # TODO: 重构时将 backend.apps.organization.tasks里的全量同步迁移到这里

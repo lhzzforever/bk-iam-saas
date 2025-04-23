@@ -14,6 +14,11 @@ from . import views
 
 urlpatterns = [
     path("groups/", views.UserGroupViewSet.as_view({"get": "list", "delete": "destroy"}), name="user.group"),
+    path(
+        "departments/-/groups/",
+        views.UserDepartmentGroupViewSet.as_view({"get": "list"}),
+        name="user.department.group",
+    ),
     path("groups_expire_soon/", views.UserGroupRenewViewSet.as_view({"get": "list"}), name="user.group.renew"),
     path(
         "profile/newbie/",
@@ -22,4 +27,34 @@ urlpatterns = [
     ),
     path("common_actions/", views.UserCommonActionViewSet.as_view({"get": "list"}), name="user.common_action"),
     path("roles/", views.RoleViewSet.as_view({"get": "list"}), name="user.role"),
+    path(
+        "groups/search/",
+        views.UserGroupSearchViewSet.as_view({"post": "search"}),
+        name="user.group.search",
+    ),
+    path(
+        "departments/-/groups/search/",
+        views.UserDepartmentGroupSearchViewSet.as_view({"post": "search"}),
+        name="user.department.group.search",
+    ),
+    path(
+        "policies/search/",
+        views.UserPolicySearchViewSet.as_view({"post": "search"}),
+        name="user.policy.group.search",
+    ),
+    path(
+        "subject_template_groups/",
+        views.UserSubjectTemplateGroupViewSet.as_view({"post": "list"}),
+        name="user.subject_template_group",
+    ),
+    path(
+        "departments/-/subject_template_groups/",
+        views.UserDepartmentSubjectTemplateGroupViewSet.as_view({"post": "list"}),
+        name="user.department.subject_template_group",
+    ),
+    path(
+        "favorite_systems/",
+        views.UserFavoriteSystemViewSet.as_view({"post": "create", "delete": "destroy"}),
+        name="user.favorite_system",
+    ),
 ]

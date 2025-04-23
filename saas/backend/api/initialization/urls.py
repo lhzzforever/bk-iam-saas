@@ -14,4 +14,5 @@ from . import views
 
 urlpatterns = [
     path("", views.InitializationView.as_view(), name="open.initialization"),
+    path("sync_user/", views.SyncUserView.as_view(), name="open.sync_user"),
 ]

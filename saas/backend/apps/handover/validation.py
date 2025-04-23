@@ -18,6 +18,7 @@ from rest_framework import serializers
 
 from backend.apps.group.models import Group
 from backend.apps.role.models import Role, RoleUser
+from backend.apps.subject_template.models import SubjectTemplate, SubjectTemplateRelation
 from backend.biz.group import GroupBiz, SubjectGroupBean
 from backend.biz.policy import PolicyQueryBiz
 from backend.biz.system import SystemBiz
@@ -58,8 +59,9 @@ class GroupInfoProcessor(BaseHandoverDataProcessor):
 
     @cached_property
     def subject_groups(self) -> List[SubjectGroupBean]:
-        subject = Subject(type=SubjectType.USER.value, id=self.handover_from)
-        return self.biz.list_subject_group(subject)
+        subject = Subject.from_username(self.handover_from)
+        # NOTE: 可能会有性能问题, 这里需要查询用户的所有组列表
+        return self.biz.list_all_subject_group(subject)
 
 
 class GustomPolicyProcessor(BaseHandoverDataProcessor):
@@ -75,7 +77,7 @@ class GustomPolicyProcessor(BaseHandoverDataProcessor):
         1. 查询用户的每个系统的自定义权限
         2. 校验id是否在自定义权限中
         """
-        subject = Subject(type=SubjectType.USER.value, id=self.handover_from)
+        subject = Subject.from_username(self.handover_from)
         for system_policy in self.custom_policies:
             policies = self.biz.list_by_subject(system_policy["system_id"], subject)
             subject_policy_id_set = {p.policy_id for p in policies if not p.is_expired()}
@@ -114,3 +116,20 @@ class RoleInfoProcessor(BaseHandoverDataProcessor):
     def get_info(self):
         roles = Role.objects.filter(id__in=self.role_ids)
         return [{"id": role.id, "type": role.type, "name": role.name, "name_en": role.name_en} for role in roles]
+
+
+class SubjectTemplateProcessor(BaseHandoverDataProcessor):
+    def __init__(self, handover_from: str, subject_template_ids: List[int]) -> None:
+        self.handover_from = handover_from
+        self.subject_template_ids = subject_template_ids
+
+    def validate(self):
+        for _id in self.subject_template_ids:
+            if not SubjectTemplateRelation.objects.filter(
+                template_id=_id, subject_id=self.handover_from, subject_type=SubjectType.USER.value
+            ).exists():
+                raise serializers.ValidationError("角色: {} 不在当前用户的可交接范围内!".format(_id))
+
+    def get_info(self):
+        templates = SubjectTemplate.objects.filter(id__in=self.subject_template_ids)
+        return [{"id": t.id, "name": t.name} for t in templates]

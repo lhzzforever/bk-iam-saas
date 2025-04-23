@@ -11,10 +11,13 @@ specific language governing permissions and limitations under the License.
 from collections import defaultdict
 from typing import Dict, List
 
+from django.conf import settings
 from pydantic.tools import parse_obj_as
 
 from backend.biz.policy import PolicyBeanList
 from backend.biz.role import RoleInfoBean
+from backend.common.time import PERMANENT_SECONDS
+from backend.service.constants import RoleType
 
 from .open import OpenCommonTrans, OpenPolicy
 
@@ -55,7 +58,7 @@ class ManagementCommonTrans(OpenCommonTrans):
         open_policies = parse_obj_as(List[OpenPolicy], actions)
 
         # 转换为策略列表(转换时会对action、实例视图等进行校验)
-        return self._to_policy_list(system_id, open_policies)
+        return self._to_policy_list(system_id, open_policies, expired_at=PERMANENT_SECONDS)  # 用户组授权默认过期时间为永久
 
 
 class GradeManagerTrans(ManagementCommonTrans):
@@ -112,7 +115,9 @@ class GradeManagerTrans(ManagementCommonTrans):
         ]
         return authorization_scopes
 
-    def to_role_info(self, data) -> RoleInfoBean:
+    def to_role_info(
+        self, data, _type: str = RoleType.GRADE_MANAGER.value, source_system_id: str = ""
+    ) -> RoleInfoBean:
         """
         将分级管理的信息数据转换为 RoleInfoBean，用于后续分级管理员创建
         data: {
@@ -157,6 +162,14 @@ class GradeManagerTrans(ManagementCommonTrans):
             ]
         }
         """
+        data.update(
+            {
+                "type": _type,
+                "source_system_id": source_system_id,
+                "hidden": source_system_id in settings.HIDDEN_SYSTEM_LIST if source_system_id else False,
+            }
+        )
+
         # 替换掉data里原有的authorization_scopes
         data["authorization_scopes"] = self._preprocess_authorization_scopes(data["authorization_scopes"])
 

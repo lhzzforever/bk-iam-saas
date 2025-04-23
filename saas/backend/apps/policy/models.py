@@ -13,6 +13,7 @@ import json
 from django.db import models
 
 from backend.common.models import BaseModel
+from backend.service.constants import AuthType
 from backend.util.json import json_dumps
 
 
@@ -34,13 +35,19 @@ class Policy(BaseModel):
 
     # policy
     _resources = models.TextField("资源策略", db_column="resources")  # json
-    policy_id = models.BigIntegerField("后端policy_id", default=0)
+    # policy_id = models.BigIntegerField("后端policy_id", default=0)
+
+    # 策略的鉴权类型
+    auth_type = models.CharField("策略的鉴权类型", max_length=16, choices=AuthType.get_choices(), default=AuthType.ABAC.value)
 
     class Meta:
         verbose_name = "权限策略"
         verbose_name_plural = "权限策略"
 
-        index_together = ["subject_id", "subject_type", "system_id"]
+        index_together = [
+            ("subject_id", "subject_type", "system_id"),
+            ("action_id", "system_id", "subject_type", "subject_id"),
+        ]
 
     @property
     def resources(self):
@@ -54,3 +61,7 @@ class Policy(BaseModel):
     def delete_by_action(cls, system_id: str, action_id: str):
         """通过操作删除策略"""
         cls.objects.filter(system_id=system_id, action_id=action_id).delete()
+
+    @property
+    def display_name(self):
+        return f"subject: {self.subject_type}/{self.subject_id} system: {self.system_id} action: {self.action_id}"

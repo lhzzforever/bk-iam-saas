@@ -34,6 +34,7 @@ class ManagementAPIEnum(BaseAPIEnum):
     GROUP_MEMBER_ADD = auto()
     GROUP_MEMBER_DELETE = auto()
     # 用户组权限
+    GROUP_POLICY_LIST = auto()
     GROUP_POLICY_GRANT = auto()
     GROUP_POLICY_REVOKE = auto()
     GROUP_POLICY_DELETE = auto()
@@ -42,6 +43,47 @@ class ManagementAPIEnum(BaseAPIEnum):
     USER_ROLE_GROUP_LIST = auto()
     # 用户组申请单
     GROUP_APPLICATION_CREATE = auto()
+
+    # V2 API
+    # 用户组
+    V2_GROUP_LIST = auto()
+    V2_GROUP_BATCH_CREATE = auto()
+    V2_GROUP_UPDATE = auto()
+    V2_GROUP_DELETE = auto()
+    # 用户组成员
+    V2_GROUP_MEMBER_LIST = auto()
+    V2_GROUP_MEMBER_ADD = auto()
+    V2_GROUP_MEMBER_DELETE = auto()
+    V2_GROUP_MEMBER_EXPIRED_AT_UPDATE = auto()
+    # 用户组权限
+    V2_GROUP_POLICY_GRANT = auto()
+    V2_GROUP_POLICY_REVOKE = auto()
+    V2_GROUP_POLICY_DELETE = auto()
+    V2_GROUP_POLICY_ACTION_LIST = auto()
+    # 用户组申请单
+    V2_GROUP_APPLICATION_CREATE = auto()
+    V2_GROUP_APPLICATION_RENEW = auto()
+    # 用户组归属
+    V2_USER_GROUPS_BELONG_CHECK = auto()
+    V2_DEPARTMENT_GROUPS_BELONG_CHECK = auto()
+    # 分级管理员
+    V2_GRADE_MANAGER_CREATE = auto()
+    V2_GRADE_MANAGER_UPDATE = auto()
+    V2_GRADE_MANAGER_DELETE = auto()
+    V2_GRADE_MANAGER_DETAIL = auto()
+    V2_GRADE_MANAGER_APPLICATION_CREATE = auto()
+    V2_GRADE_MANAGER_APPLICATION_UPDATE = auto()
+    # 子集管理员
+    V2_SUBSET_MANAGER_CREATE = auto()
+    V2_SUBSET_MANAGER_LIST = auto()
+    V2_SUBSET_MANAGER_DETAIL = auto()
+    V2_SUBSET_MANAGER_UPDATE = auto()
+    V2_SUBSET_MANAGER_DELETE = auto()
+    # 审批
+    V2_APPLICATION_APPROVAL = auto()
+    V2_APPLICATION_CANCEL = auto()
+    # 人员模版
+    V2_SUBJECT_TEMPLATE_LIST = auto()
 
     _choices_labels = skip(
         (
@@ -70,6 +112,41 @@ class ManagementAPIEnum(BaseAPIEnum):
             (USER_ROLE_GROUP_LIST, "获取某个分级管理员下用户加入的用户组列表"),
             # 用户组申请单
             (GROUP_APPLICATION_CREATE, "创建用户组申请单"),
+            # V2
+            # 用户组
+            (V2_GROUP_LIST, "[V2]用户组列表"),
+            (V2_GROUP_BATCH_CREATE, "[V2]批量创建用户组"),
+            (V2_GROUP_UPDATE, "[V2]更新用户组"),
+            (V2_GROUP_DELETE, "[V2]删除用户组"),
+            # 用户组成员
+            (V2_GROUP_MEMBER_LIST, "[V2]获取用户组成员列表"),
+            (V2_GROUP_MEMBER_ADD, "[V2]添加用户组成员"),
+            (V2_GROUP_MEMBER_DELETE, "[V2]删除用户组成员"),
+            (V2_GROUP_MEMBER_EXPIRED_AT_UPDATE, "[V2]用户组成员续期"),
+            # 用户组权限
+            (V2_GROUP_POLICY_GRANT, "[V2]授权用户组"),
+            (V2_GROUP_POLICY_REVOKE, "[V2]回收用户组权限"),
+            (V2_GROUP_POLICY_DELETE, "[V2]删除用户组策略"),
+            (V2_GROUP_POLICY_ACTION_LIST, "[V2]用户组策略对应操作列表"),
+            # 用户组申请单
+            (V2_GROUP_APPLICATION_CREATE, "[V2]创建用户组申请单"),
+            (V2_GROUP_APPLICATION_RENEW, "[V2]用户组续期申请单"),
+            # 用户组归属
+            (V2_USER_GROUPS_BELONG_CHECK, "[V2]判断用户与用户组归属"),
+            (V2_DEPARTMENT_GROUPS_BELONG_CHECK, "[V2]判断部门与用户组归属"),
+            # 分级管理员
+            (V2_GRADE_MANAGER_DETAIL, "[V2]分级管理员详情"),
+            (V2_GRADE_MANAGER_CREATE, "[V2]新建分级管理员"),
+            (V2_GRADE_MANAGER_UPDATE, "[V2]更新分级管理员"),
+            (V2_GRADE_MANAGER_APPLICATION_CREATE, "[V2]创建分级管理员创建申请单"),
+            (V2_GRADE_MANAGER_APPLICATION_UPDATE, "[V2]创建分级管理员更新申请单"),
+            # 子集管理员
+            (V2_SUBSET_MANAGER_CREATE, "[V2]创建子集管理员"),
+            (V2_SUBSET_MANAGER_LIST, "[V2]子集管理员列表"),
+            # 审批
+            (V2_APPLICATION_APPROVAL, "[V2]申请单审批通知"),
+            # 申请单取消
+            (V2_APPLICATION_CANCEL, "[V2]申请单取消"),
         )
     )
 
@@ -81,12 +158,14 @@ class VerifyAPIObjectTypeEnum(ChoicesEnum, LowerStrEnum):
     GROUP = auto()
 
 
-class VerifyAPIParamLocationEnum(ChoicesEnum, LowerStrEnum):
+class VerifyApiParamLocationEnum(ChoicesEnum, LowerStrEnum):
     ROLE_IN_PATH = auto()
     GROUP_IN_PATH = auto()
     SYSTEM_IN_BODY = auto()
     SYSTEM_IN_QUERY = auto()
     GROUP_IDS_IN_BODY = auto()
+    SYSTEM_IN_PATH = auto()
+    GROUP_IDS_IN_QUERY = auto()
 
     _choices_labels = skip(
         (
@@ -95,13 +174,15 @@ class VerifyAPIParamLocationEnum(ChoicesEnum, LowerStrEnum):
             (SYSTEM_IN_BODY, "在body data里的system参数"),
             (SYSTEM_IN_QUERY, "在get请求query里的system参数"),
             (GROUP_IDS_IN_BODY, "在body data里的groups_ids参数"),
+            (SYSTEM_IN_PATH, "在路径里的system参数"),
+            (GROUP_IDS_IN_QUERY, "在get请求query里的groups_ids参数"),
         )
     )
 
 
 VerifyAPIParamSourceToObjectTypeMap = {
-    VerifyAPIParamLocationEnum.ROLE_IN_PATH.value: VerifyAPIObjectTypeEnum.ROLE.value,
-    VerifyAPIParamLocationEnum.GROUP_IN_PATH.value: VerifyAPIObjectTypeEnum.GROUP.value,
+    VerifyApiParamLocationEnum.ROLE_IN_PATH.value: VerifyAPIObjectTypeEnum.ROLE.value,
+    VerifyApiParamLocationEnum.GROUP_IN_PATH.value: VerifyAPIObjectTypeEnum.GROUP.value,
 }
 
 # 主要用于ViewSet里配置了ManagementAPIPermission，但是对于一些请求不需要对API鉴权的，可在management_api_permission里配置忽略鉴权

@@ -12,6 +12,7 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 from backend.common.cache import Cache, CacheEnum, CacheKeyPrefixEnum, cachedmethod
+from backend.common.error_codes import error_codes
 from backend.component import iam, resource_provider
 from backend.service.models.resource import ResourceApproverAttribute
 from backend.util.basic import chunked
@@ -106,7 +107,7 @@ class ResourceIDNameCache:
         # 缓存有问题，不影响正常逻辑
         try:
             self.cache.set_many(data, timeout=5 * 60)
-        except Exception:  # noqa
+        except Exception:  # pylint: disable=broad-except noqa
             logger.exception("set resource id:name cache fail")
 
     def get(self, ids: List[str]) -> Dict[str, Optional[str]]:
@@ -119,7 +120,7 @@ class ResourceIDNameCache:
         # 缓存有问题，不影响正常逻辑
         try:
             results = self.cache.get_many(list(map_keys.keys()))
-        except Exception:  # noqa
+        except Exception:  # pylint: disable=broad-except noqa
             logger.exception("get resource id:name cache fail")
             results = {}
 
@@ -180,13 +181,20 @@ class ResourceProvider:
         return count, [ResourceAttributeValue(**i) for i in results]
 
     def list_instance(
-        self, ancestors: List[Dict[str, str]], limit: int = 10, offset: int = 0
+        self,
+        ancestors: List[Dict[str, str]],
+        limit: int = 10,
+        offset: int = 0,
+        action_system_id: str = "",
+        action_id: str = "",
     ) -> Tuple[int, List[ResourceInstanceBaseInfo]]:
         """根据上级资源获取某个资源实例列表"""
         filter_condition: Dict[str, Any] = {}
         if ancestors:
             filter_condition["ancestors"] = ancestors
             filter_condition["parent"] = {"type": ancestors[-1]["type"], "id": ancestors[-1]["id"]}
+        if action_system_id and action_id:
+            filter_condition["action"] = {"system": action_system_id, "id": action_id}
         page = self._get_page_params(limit, offset)
         count, results = self.client.list_instance(filter_condition, page)
 
@@ -198,14 +206,48 @@ class ResourceProvider:
 
         return count, instance_results
 
+    def list_instance_by_display_names(
+        self,
+        display_names: List[str],
+        action_system_id: str = "",
+        action_id: str = "",
+    ) -> Tuple[int, List[ResourceInstanceBaseInfo]]:
+        """根据显示名称获取某个资源实例列表"""
+        filter_condition: Dict[str, Any] = {
+            "display_names": display_names,
+        }
+
+        if action_system_id and action_id:
+            filter_condition["action"] = {"system": action_system_id, "id": action_id}
+
+        page = self._get_page_params(len(display_names), 0)
+        count, results = self.client.list_instance(filter_condition, page)
+
+        # 转换成需要的数据
+        instance_results = [ResourceInstanceBaseInfo(**i) for i in results]
+        # Cache 查询到的信息
+        if instance_results:
+            self.id_name_cache.set({i.id: i.display_name for i in instance_results})
+
+        return count, instance_results
+
     def search_instance(
-        self, keyword: str, parent_type: str = "", parent_id: str = "", limit: int = 10, offset: int = 0
+        self,
+        keyword: str,
+        ancestors: List[Dict[str, str]],
+        limit: int = 10,
+        offset: int = 0,
+        action_system_id: str = "",
+        action_id: str = "",
     ) -> Tuple[int, List[ResourceInstanceBaseInfo]]:
         """根据上级资源和Keyword搜索某个资源实例列表"""
         # Note: 虽然与list_instance很相似，但在制定回调接口协议时特意分开为两个API，这样方便后续搜索的扩展
         filter_condition: Dict = {"keyword": keyword}
-        if parent_type and parent_id:
-            filter_condition["parent"] = {"type": parent_type, "id": parent_id}
+        if ancestors:
+            filter_condition["ancestors"] = ancestors
+            filter_condition["parent"] = {"type": ancestors[-1]["type"], "id": ancestors[-1]["id"]}
+        if action_system_id and action_id:
+            filter_condition["action"] = {"system": action_system_id, "id": action_id}
         page = self._get_page_params(limit, offset)
         count, results = self.client.search_instance(filter_condition, page)
 
@@ -233,6 +275,12 @@ class ResourceProvider:
         # Dict转为struct
         instance_results = []
         for i in results:
+            if "id" not in i:
+                raise error_codes.RESOURCE_PROVIDER_VALIDATE_ERROR.format(
+                    f"fetch_instance_info[system:{self.system_id} resource_type_id:{self.resource_type_id}"
+                    + f" resource:{i}] id must not be empty"
+                )
+
             instance_results.append(
                 ResourceInstanceInfo(
                     id=i["id"],
@@ -262,12 +310,15 @@ class ResourceProvider:
         # 未被缓存的需要实时查询
         not_cached_ids = [_id for _id in ids if _id not in cache_id_name_map]
         not_cached_results = self.fetch_instance_info(not_cached_ids, [self.name_attribute])
-        results.extend(
-            [
-                ResourceInstanceBaseInfo(id=i.id, display_name=i.attributes[self.name_attribute])
-                for i in not_cached_results
-            ]
-        )
+
+        for one in not_cached_results:
+            if self.name_attribute not in one.attributes:
+                raise error_codes.RESOURCE_PROVIDER_VALIDATE_ERROR.format(
+                    f"fetch_instance_info[system:{self.system_id} resource_type_id:{self.resource_type_id}"
+                    + f" resource_id:{one.id}] attribute:{self.name_attribute} must not be empty"
+                )
+
+            results.append(ResourceInstanceBaseInfo(id=one.id, display_name=one.attributes[self.name_attribute]))
 
         return results
 

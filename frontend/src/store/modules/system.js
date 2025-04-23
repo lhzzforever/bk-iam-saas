@@ -25,16 +25,16 @@
 */
 
 import http from '@/api';
-// import { json2Query } from '@/common/util'
+import { json2Query } from '@/common/util';
 
 const AJAX_URL_PREFIX = window.AJAX_URL_PREFIX;
 
 export default {
-    namespaced: true,
-    state: {},
-    mutations: {},
-    actions: {
-        /**
+  namespaced: true,
+  state: {},
+  mutations: {},
+  actions: {
+    /**
          * 获取系统列表数据
          *
          * @param {Function} commit store commit mutation handler
@@ -44,8 +44,13 @@ export default {
          *
          * @return {Promise} promise 对象
          */
-        getSystems ({ commit, state, dispatch }, config) {
-            return http.get(`${AJAX_URL_PREFIX}/systems/`, config);
-        }
+    getSystems ({ commit, state, dispatch }, params = {}, config) {
+      return http.get(
+        Object.keys(params).length
+          ? `${AJAX_URL_PREFIX}/systems/?${json2Query(params)}`
+          : `${AJAX_URL_PREFIX}/systems/`,
+        config
+      );
     }
+  }
 };

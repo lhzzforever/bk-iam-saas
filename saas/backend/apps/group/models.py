@@ -10,21 +10,22 @@ specific language governing permissions and limitations under the License.
 """
 from django.db import models
 
-from backend.common.models import BaseModel, CompressedJSONField, TimestampedModel
+from backend.common.models import BaseModel, BaseSystemHiddenModel, CompressedJSONField, TimestampedModel
 
 from .managers import GroupAuthorizeLockManager
 
 
-class Group(BaseModel):
+class Group(BaseModel, BaseSystemHiddenModel):
     """
     用户组
     """
 
-    name = models.CharField("名称", max_length=128)
+    name = models.CharField("名称", max_length=512)
     description = models.CharField("描述", max_length=512)
     user_count = models.IntegerField("用户数", default=0)
     department_count = models.IntegerField("部门数", default=0)
     readonly = models.BooleanField("用户组只读标识", default=False)  # 增加可读标识
+    apply_disable = models.BooleanField("用户组不可申请", default=False, db_index=True)
 
     class Meta:
         verbose_name = "用户组"

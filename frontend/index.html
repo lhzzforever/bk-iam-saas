@@ -17,11 +17,18 @@
                 const BK_PAAS_HOST = '{{ BK_PAAS_HOST }}'
                 const BK_USER_API = '{{ BK_COMPONENT_API_URL }}' + '/api/c/compapi/v2/usermanage/fs_list_users/'
                 const CSRF_COOKIE_NAME = '{{ CSRF_COOKIE_NAME }}'
-                const PRODUCT_DOC_URL_PREFIX = 'https://bk.tencent.com/docs/'
+                const BK_DOCS_URL_PREFIX = '{{ BK_DOCS_URL_PREFIX }}' + '/markdown'
                 const CE_URL = 'https://bk.tencent.com/s-mart/community'
                 const BK_ITSM_APP_URL = '{{ BK_ITSM_APP_URL }}'
                 const ENABLE_MODEL_BUILD = '{{ ENABLE_MODEL_BUILD }}' || ''
                 const ENABLE_PERMISSION_HANDOVER = '{{ ENABLE_PERMISSION_HANDOVER }}' || ''
+                const ENABLE_TEMPORARY_POLICY = '{{ ENABLE_TEMPORARY_POLICY }}' || ''
+                const ENABLE_GROUP_INSTANCE_SEARCH = '{{ ENABLE_GROUP_INSTANCE_SEARCH }}' || ''
+                const ENABLE_ORGANIZATION_COUNT = '{{ ENABLE_ORGANIZATION_COUNT }}' || ''
+                const ENABLE_ASSISTANT = '{{ ENABLE_ASSISTANT }}' || ''
+                const ENABLE_BK_NOTICE = '{{ ENABLE_BK_NOTICE }}' || ''
+                const BK_DOMAIN = '{{ BK_DOMAIN }}' || ''
+                const BK_COMPONENT_API_URL = '{{ BK_COMPONENT_API_URL }}' || ''
                 document.domain = '{{ SESSION_COOKIE_DOMAIN }}'
                 window.LOGIN_SERVICE_URL = LOGIN_SERVICE_URL
                 window.AJAX_URL_PREFIX = AJAX_URL_PREFIX
@@ -31,26 +38,34 @@
                 window.BK_USER_API = BK_USER_API
                 window.CUR_LANGUAGE = getLanguage()
                 window.CSRF_COOKIE_NAME = CSRF_COOKIE_NAME
-                window.PRODUCT_DOC_URL_PREFIX = PRODUCT_DOC_URL_PREFIX
+                window.BK_DOCS_URL_PREFIX = BK_DOCS_URL_PREFIX
                 window.BK_ITSM_APP_URL = BK_ITSM_APP_URL
                 window.ENABLE_MODEL_BUILD = ENABLE_MODEL_BUILD
                 window.ENABLE_PERMISSION_HANDOVER = ENABLE_PERMISSION_HANDOVER
+                window.ENABLE_TEMPORARY_POLICY = ENABLE_TEMPORARY_POLICY
+                window.ENABLE_GROUP_INSTANCE_SEARCH = ENABLE_GROUP_INSTANCE_SEARCH
+                window.ENABLE_ORGANIZATION_COUNT = ENABLE_ORGANIZATION_COUNT
+                window.ENABLE_ASSISTANT = ENABLE_ASSISTANT
+                window.ENABLE_BK_NOTICE = ENABLE_BK_NOTICE
                 window.CE_URL = CE_URL
+                window.BK_DOMAIN = BK_DOMAIN
+                window.BK_COMPONENT_API_URL = BK_COMPONENT_API_URL
             })()
 
             function getLanguage () {
-                const cookieList = document.cookie.split(';')
-                const CUR_LANGUAGE_DATA = cookieList.find(item => item.includes('blueking_language'))
-                let CUR_LANGUAGE = 'zh-cn'
-                if (CUR_LANGUAGE_DATA) {
-                    CUR_LANGUAGE = CUR_LANGUAGE_DATA.split('=')[1] || 'zh-cn'
-                }
+                // const cookieList = document.cookie.split(';')
+                // const CUR_LANGUAGE_DATA = cookieList.find(item => item.includes('blueking_language'))
+                // let CUR_LANGUAGE = 'zh-cn'
+                // if (CUR_LANGUAGE_DATA) {
+                //     CUR_LANGUAGE = CUR_LANGUAGE_DATA.split('=')[1] || 'zh-cn'
+                // }
+                let CUR_LANGUAGE = getCookie('blueking_language') ||'zh-cn'
                 // 英文 兼容处理
-                if (['en', 'en-US', 'en-us'].includes(CUR_LANGUAGE)) {
+                if (CUR_LANGUAGE.toLowerCase().indexOf('en') > -1) {
                     CUR_LANGUAGE = 'en'
                 }
                 // 中文 兼容处理
-                if (['zh-cn', 'zh-CN', 'None', 'none', ''].includes(CUR_LANGUAGE)) {
+                if (CUR_LANGUAGE.toLowerCase().indexOf('zh') > -1) {
                     CUR_LANGUAGE = 'zh-cn'
                 }
                 if (CUR_LANGUAGE === 'en') {
@@ -62,14 +77,23 @@
                 return CUR_LANGUAGE
             }
 
-            window.onload = function () {
-                let ta = document.createElement('script')
-                ta.src = '//tajs.qq.com/stats?sId=64878578'
-                ta.defer = 'defer'
-                let s = document.getElementsByTagName('script')[0]
-                s.parentNode.insertBefore(ta, s)
+             function getCookie (name) {
+                const data = document.cookie.split(';');
+                const params = {};
+                for (let i = 0; i < data.length; i++) {
+                    params[data[i].split('=')[0].replace(/\s/, '')] = data[i].split('=')[1];
+                }
+                return params[name];
             }
+
+            // window.onload = function () {
+            //     let ta = document.createElement('script')
+            //     ta.src = '//tajs.qq.com/stats?sId=64878578'
+            //     ta.defer = 'defer'
+            //     let s = document.getElementsByTagName('script')[0]
+            //     s.parentNode.insertBefore(ta, s)
+            // }
         </script>
-        <script src="{{ STATIC_URL }}/lib.bundle.js"></script>
+        <!-- <script src="{{ STATIC_URL }}/lib.bundle.js"></script> -->
     </body>
 </html>

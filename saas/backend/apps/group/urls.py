@@ -19,7 +19,13 @@ urlpatterns = [
         views.GroupsMemberViewSet.as_view({"post": "create"}),
         name="group.members",
     ),
+    path(
+        "members/delete/",
+        views.GroupsMemberViewSet.as_view({"post": "destroy"}),
+        name="group.members_delete",
+    ),
     path("transfer/", views.GroupTransferView.as_view(), name="group.transfer"),
+    path("search/", views.GroupSearchViewSet.as_view({"post": "search"}), name="group.search"),
     # 用户组详情
     path(
         "<str:id>/",
@@ -36,11 +42,23 @@ urlpatterns = [
         views.GroupMemberUpdateExpiredAtViewSet.as_view({"post": "create"}),
         name="group.members.renew",
     ),
+    path(
+        "<str:id>/transfer/",
+        views.GradeManagerGroupTransferView.as_view({"post": "post"}),
+        name="group.grade_manager_transfer",
+    ),
+    # 用户组的模板
     path("<str:id>/templates/", views.GroupTemplateViewSet.as_view({"get": "list"}), name="group.templates"),
     path(
         "<str:id>/templates/<int:template_id>/",
-        views.GroupTemplateViewSet.as_view({"get": "retrieve"}),
+        views.GroupTemplateViewSet.as_view({"get": "retrieve", "delete": "destroy"}),
         name="group.template_detail",
+    ),
+    # 用户组对应的角色的模板列表
+    path(
+        "<str:id>/role/templates/",
+        views.GroupRoleTemplatesViewSet.as_view({"get": "list"}),
+        name="group.role_templates",
     ),
     # 用户组有权限的系统
     path("<str:id>/systems/", views.GroupSystemViewSet.as_view({"get": "list"}), name="group.list_policy_system"),
@@ -59,5 +77,15 @@ urlpatterns = [
         "<str:id>/policies/condition_compare/",
         views.GroupCustomPolicyConditionCompareView.as_view({"post": "create"}),
         name="group.custom_policy_condition_compare",
+    ),
+    path(
+        "<str:id>/subject_templates/",
+        views.GroupSubjectTemplateViewSet.as_view({"get": "list"}),
+        name="group.subject_template",
+    ),
+    path(
+        "<str:id>/template-members/",
+        views.GroupTemplateMemberViewSet.as_view({"get": "list"}),
+        name="group.template_member",
     ),
 ]

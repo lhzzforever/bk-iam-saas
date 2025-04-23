@@ -15,12 +15,14 @@ from typing import List
 from backend.apps.handover.constants import HandoverTaskStatus
 from backend.apps.handover.models import HandoverTask
 from backend.apps.role.models import Role
-from backend.audit.audit import log_group_event, log_role_event, log_user_event
+from backend.audit.audit import log_group_event, log_role_event, log_subject_template_event, log_user_event
 from backend.audit.constants import AuditSourceType, AuditType
 from backend.biz.group import GroupBiz
+from backend.biz.helper import RoleWithPermGroupBiz
 from backend.biz.policy import PolicyOperationBiz, PolicyQueryBiz
 from backend.biz.role import RoleBiz
-from backend.service.constants import RoleType, SubjectType
+from backend.biz.subject_template import SubjectTemplateBiz
+from backend.service.constants import RoleType
 from backend.service.models import Subject
 
 
@@ -48,14 +50,14 @@ class BaseHandoverHandler(ABC):
         pass
 
 
-class GroupHandoverhandler(BaseHandoverHandler):
+class GroupHandoverHandler(BaseHandoverHandler):
     biz = GroupBiz()
 
     def __init__(self, handover_task_id, handover_from, handover_to, object_detail):
         self.handover_task_id = handover_task_id
 
-        self.grant_subject = Subject(type=SubjectType.USER.value, id=handover_to)
-        self.remove_subject = Subject(type=SubjectType.USER.value, id=handover_from)
+        self.grant_subject = Subject.from_username(handover_to)
+        self.remove_subject = Subject.from_username(handover_from)
 
         self.group_id = object_detail["id"]
         self.expired_at = object_detail["expired_at"]
@@ -86,8 +88,8 @@ class CustomHandoverHandler(BaseHandoverHandler):
     def __init__(self, handover_task_id, handover_from, handover_to, object_detail):
         self.handover_task_id = handover_task_id
 
-        self.grant_subject = Subject(type=SubjectType.USER.value, id=handover_to)
-        self.remove_subject = Subject(type=SubjectType.USER.value, id=handover_from)
+        self.grant_subject = Subject.from_username(handover_to)
+        self.remove_subject = Subject.from_username(handover_from)
 
         self.system_id = object_detail["id"]
         self.policy_ids = object_detail["policy_ids"]
@@ -118,6 +120,7 @@ class CustomHandoverHandler(BaseHandoverHandler):
 
 class RoleHandoverHandler(BaseHandoverHandler):
     biz = RoleBiz()
+    role_with_perm_group_biz = RoleWithPermGroupBiz()
 
     def __init__(self, handover_task_id, handover_from, handover_to, object_detail):
         self.handover_task_id = handover_task_id
@@ -127,10 +130,11 @@ class RoleHandoverHandler(BaseHandoverHandler):
         self.role_id = object_detail["id"]
         self.role_type = object_detail["type"]
 
+        self.role = Role.objects.get(id=self.role_id)
+
     def grant_permission(self):
         if self.role_type == RoleType.SUPER_MANAGER.value:
-            role = Role.objects.get(type=RoleType.SUPER_MANAGER.value)
-            need_sync_backend_role = self.handover_from in role.system_permission_enabled_content.enabled_users
+            need_sync_backend_role = self.handover_from in self.role.system_permission_enabled_content.enabled_users
             self.biz.add_super_manager_member(username=self.handover_to, need_sync_backend_role=need_sync_backend_role)
         elif self.role_type == RoleType.SYSTEM_MANAGER.value:
             members = self._get_system_manager_members()
@@ -138,17 +142,14 @@ class RoleHandoverHandler(BaseHandoverHandler):
                 return
             members.append(self.handover_to)
             self.biz.modify_system_manager_members(role_id=self.role_id, members=members)
-        elif self.role_type == RoleType.RATING_MANAGER.value:
-            self.biz.add_grade_manager_members(self.role_id, [self.handover_to])
-
-        if self.role_type != RoleType.SUPER_MANAGER.value:
-            role = Role.objects.get(id=self.role_id)
+        elif self.role_type in [RoleType.GRADE_MANAGER.value, RoleType.SUBSET_MANAGER.value]:
+            self.role_with_perm_group_biz.batch_add_grade_manager_member(self.role, [self.handover_to])
 
         # 审计
         log_role_event(
             AuditType.ROLE_MEMBER_CREATE.value,
-            Subject(type=SubjectType.USER.value, id=self.handover_from),
-            role,
+            Subject.from_username(self.handover_from),
+            self.role,
             extra={"members": [self.handover_to]},
             source_type=AuditSourceType.HANDOVER.value,
         )
@@ -160,10 +161,37 @@ class RoleHandoverHandler(BaseHandoverHandler):
             members = self._get_system_manager_members()
             members.remove(self.handover_from)
             self.biz.modify_system_manager_members(role_id=self.role_id, members=members)
-        elif self.role_type == RoleType.RATING_MANAGER.value:
-            self.biz.delete_member(self.role_id, self.handover_from)
+        elif self.role_type in [RoleType.GRADE_MANAGER.value, RoleType.SUBSET_MANAGER.value]:
+            self.role_with_perm_group_biz.delete_role_member(self.role, self.handover_from)
 
     def _get_system_manager_members(self) -> List[str]:
         if self.role_type != RoleType.SYSTEM_MANAGER.value:
             return []
         return self.biz.list_members_by_role_id(self.role_id)
+
+
+class SubjectTemplateHandoverHandler(BaseHandoverHandler):
+    biz = SubjectTemplateBiz()
+
+    def __init__(self, handover_task_id, handover_from, handover_to, object_detail):
+        self.handover_task_id = handover_task_id
+
+        self.grant_subject = Subject.from_username(handover_to)
+        self.remove_subject = Subject.from_username(handover_from)
+
+        self.template_id = object_detail["id"]
+
+    def grant_permission(self):
+        self.biz.add_members(self.template_id, members=[self.grant_subject])
+
+        # 审计
+        log_subject_template_event(
+            AuditType.SUBJECT_TEMPLATE_MEMBER_CREATE.value,
+            self.grant_subject,
+            [self.template_id],
+            username=self.remove_subject.id,
+            source_type=AuditSourceType.HANDOVER.value,
+        )
+
+    def revoke_permission(self):
+        self.biz.delete_members(self.template_id, members=[self.remove_subject])

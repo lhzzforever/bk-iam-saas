@@ -1,14 +1,43 @@
 <template functional>
-    <div :class="['horizontal-item', props.extCls || '']">
-        <div class="label" :class="props.required ? 'is-required' : ''">
-            {{ props.label ? `${props.label}` : ''}}
-        </div>
-        <div class="content">
-            <slot />
-            <slot name="append" />
-        </div>
+  <div :class="['horizontal-item', props.extCls || '']" :style="props.styles">
+    <div
+      class="label"
+      :class="props.required ? 'is-required' : ''"
+      :style="{ minWidth: `${(props.labelWidth >= 0 ? props.labelWidth : 120)}px` }">
+      {{ props.label ? `${props.label}` : ''}}
     </div>
+    <div class="content"
+      :style="{ minWidth: `calc(100% - ${(props.labelWidth >= 0 ? props.labelWidth : 120) + 14}px)` }">
+      <slot />
+      <slot name="append" />
+    </div>
+  </div>
 </template>
+<script>
+  export default {
+    props: {
+      styles: {
+        type: Object,
+        default: () => {}
+      },
+      required: {
+        type: Boolean,
+        required: false
+      },
+      extCls: {
+        type: String,
+        default: ''
+      },
+      label: {
+        type: String,
+        default: ''
+      },
+      labelWidth: {
+        type: Number
+      }
+    }
+  };
+</script>
 <style lang="postcss">
     .horizontal-item {
         position: relative;
@@ -41,7 +70,8 @@
         }
         .content {
             flex: 1;
-            max-width: calc(100% - 134px);
+            /* max-width: calc(100% - 134px); */
+            min-width: calc(100% - 134px);
         }
     }
 </style>

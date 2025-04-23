@@ -19,21 +19,23 @@ from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet, views
 
 from backend.apps.application.models import Application
-from backend.apps.role.models import Role, RoleUser
+from backend.apps.organization.models import User as UserModel
+from backend.apps.role.models import Role
 from backend.biz.application import (
     ApplicationBiz,
     ApplicationGroupInfoBean,
-    ApplicationRenewPolicyInfoBean,
     GradeManagerApplicationDataBean,
     GroupApplicationDataBean,
 )
-from backend.biz.group import GroupCheckBiz
+from backend.biz.group import GroupBiz
 from backend.biz.policy import PolicyBean, PolicyBeanList, PolicyQueryBiz
 from backend.biz.policy_tag import ConditionTagBean, ConditionTagBiz
-from backend.biz.role import RoleBiz, RoleCheckBiz
+from backend.biz.role import RoleBiz, RoleCheckBiz, can_user_manage_role
+from backend.biz.subject import SubjectInfoList
 from backend.common.error_codes import error_codes
-from backend.service.constants import ADMIN_USER, ApplicationTypeEnum, RoleType, SubjectType
-from backend.service.models import Subject
+from backend.common.lock import gen_role_upsert_lock
+from backend.service.constants import ADMIN_USER, ApplicationType, RoleType, SubjectType
+from backend.service.models import Applicant, Subject
 from backend.trans.application import ApplicationDataTrans
 from backend.trans.role import RoleTrans
 
@@ -51,6 +53,7 @@ from .serializers import (
     RenewGroupApplicationSLZ,
     RenewPolicyApplicationSLZ,
 )
+from .tasks import create_policies_renew_applications
 
 
 def admin_not_need_apply_check(func):
@@ -93,7 +96,7 @@ class ApplicationViewSet(GenericViewSet):
         # 将Dict数据转换为创建单据所需的数据结构
         application_data = self.trans.from_grant_policy_application(user_id, data)
         # 创建单据
-        self.biz.create_for_policy(ApplicationTypeEnum.GRANT_ACTION.value, application_data)
+        self.biz.create_for_policy(ApplicationType.GRANT_ACTION.value, application_data)
 
         return Response({}, status=status.HTTP_201_CREATED)
 
@@ -180,7 +183,7 @@ class ConditionView(views.APIView):
         # 1. 查询用户已有的policy的condition
         related_resource_type: Dict[str, Any] = data["related_resource_type"]
         old_condition = self.policy_biz.get_policy_resource_type_conditions(
-            Subject(type=SubjectType.USER.value, id=request.user.username),
+            Subject.from_username(request.user.username),
             data["policy_id"],
             data["resource_group_id"],
             related_resource_type["system_id"],
@@ -202,7 +205,7 @@ class ApplicationByGroupView(views.APIView):
     """
 
     biz = ApplicationBiz()
-    group_check_biz = GroupCheckBiz()
+    group_biz = GroupBiz()
 
     @swagger_auto_schema(
         operation_description="加入用户组申请",
@@ -218,17 +221,25 @@ class ApplicationByGroupView(views.APIView):
         data = serializer.validated_data
         user_id = request.user.username
 
-        # 判断用户加入的用户组数与申请的数是否超过最大限制
-        self.group_check_biz.check_subject_group_limit(Subject(type=SubjectType.USER.value, id=user_id))
+        # 检查用户组数量是否超限
+        self.group_biz.check_subject_groups_quota(Subject.from_username(user_id), [g["id"] for g in data["groups"]])
+
+        applicants = data["applicants"]
+        if not applicants:
+            applicants = [{"type": SubjectType.USER.value, "id": user_id}]
+
+        applicant_infos = SubjectInfoList([Subject.parse_obj(one) for one in applicants]).subjects
 
         # 创建申请
         self.biz.create_for_group(
-            ApplicationTypeEnum.JOIN_GROUP.value,
+            ApplicationType.JOIN_GROUP.value,
             GroupApplicationDataBean(
                 applicant=user_id,
                 reason=data["reason"],
                 groups=[ApplicationGroupInfoBean(id=g["id"], expired_at=data["expired_at"]) for g in data["groups"]],
+                applicants=[Applicant(type=one.type, id=one.id, display_name=one.name) for one in applicant_infos],
             ),
+            source_system_id=data["source_system_id"],
         )
 
         return Response({}, status=status.HTTP_201_CREATED)
@@ -256,15 +267,17 @@ class ApplicationByGradeManagerView(views.APIView):
         data = serializer.validated_data
         user_id = request.user.username
 
-        # 名称唯一性检查
-        self.role_check_biz.check_unique_name(data["name"])
-
         # 结构转换
         info = self.role_trans.from_role_data(data)
-        self.biz.create_for_grade_manager(
-            ApplicationTypeEnum.CREATE_RATING_MANAGER.value,
-            GradeManagerApplicationDataBean(applicant=user_id, reason=data["reason"], role_info=info),
-        )
+
+        with gen_role_upsert_lock(data["name"]):
+            # 名称唯一性检查
+            self.role_check_biz.check_grade_manager_unique_name(data["name"])
+
+            self.biz.create_for_grade_manager(
+                ApplicationType.CREATE_GRADE_MANAGER.value,
+                GradeManagerApplicationDataBean(applicant=user_id, reason=data["reason"], role_info=info),
+            )
 
         return Response({}, status=status.HTTP_201_CREATED)
 
@@ -292,12 +305,10 @@ class ApplicationByGradeManagerUpdatedView(views.APIView):
         data = serializer.validated_data
         user_id = request.user.username
 
-        role = Role.objects.get(type=RoleType.RATING_MANAGER.value, id=data["id"])
-        # 名称唯一性检查
-        self.role_check_biz.check_unique_name(data["name"], role.name)
+        role = Role.objects.get(type=RoleType.GRADE_MANAGER.value, id=data["id"])
 
         # 必须是分级管理员的成员才可以申请修改
-        if not RoleUser.objects.user_role_exists(user_id=user_id, role_id=role.id):
+        if not can_user_manage_role(user_id, role.id):
             raise error_codes.FORBIDDEN.format(message=_("非分级管理员({})的成员，无权限申请修改").format(role.name), replace=True)
 
         # 查询已有的策略范围
@@ -309,10 +320,17 @@ class ApplicationByGradeManagerUpdatedView(views.APIView):
         }
 
         info = self.role_trans.from_role_data(data, old_system_policy_list=old_system_policy_list)
-        self.biz.create_for_grade_manager(
-            ApplicationTypeEnum.UPDATE_RATING_MANAGER,
-            GradeManagerApplicationDataBean(role_id=role.id, applicant=user_id, reason=data["reason"], role_info=info),
-        )
+
+        with gen_role_upsert_lock(data["name"]):
+            # 名称唯一性检查
+            self.role_check_biz.check_grade_manager_unique_name(data["name"], role.name)
+
+            self.biz.create_for_grade_manager(
+                ApplicationType.UPDATE_GRADE_MANAGER,
+                GradeManagerApplicationDataBean(
+                    role_id=role.id, applicant=user_id, reason=data["reason"], role_info=info
+                ),
+            )
 
         return Response({}, status=status.HTTP_201_CREATED)
 
@@ -336,14 +354,19 @@ class ApplicationByRenewGroupView(views.APIView):
 
         data = serializer.validated_data
 
+        # 转换为ApplicationBiz创建申请单所需数据结构
+        user = UserModel.objects.get(username=request.user.username)
+
         # 创建申请
         self.biz.create_for_group(
-            ApplicationTypeEnum.RENEW_GROUP.value,
+            ApplicationType.RENEW_GROUP.value,
             GroupApplicationDataBean(
-                applicant=request.user.username,
+                applicant=user.username,
                 reason=data["reason"],
                 groups=parse_obj_as(List[ApplicationGroupInfoBean], data["groups"]),
+                applicants=[Applicant(type=SubjectType.USER.value, id=user.username, display_name=user.display_name)],
             ),
+            source_system_id=data["source_system_id"],
         )
 
         return Response({}, status=status.HTTP_201_CREATED)
@@ -368,9 +391,8 @@ class ApplicationByRenewPolicyView(views.APIView):
 
         data = serializer.validated_data
 
-        self.biz.create_for_renew_policy(
-            parse_obj_as(List[ApplicationRenewPolicyInfoBean], data["policies"]), request.user.username, data["reason"]
-        )
+        # 异步处理避免超时
+        create_policies_renew_applications.delay(data, request.user.username)
 
         return Response({}, status=status.HTTP_201_CREATED)
 
@@ -400,6 +422,6 @@ class ApplicationByTemporaryPolicyView(views.APIView):
         # 将Dict数据转换为创建单据所需的数据结构
         application_data = self.trans.from_grant_temporary_policy_application(user_id, data)
         # 创建单据
-        self.biz.create_for_policy(ApplicationTypeEnum.GRANT_TEMPORARY_ACTION.value, application_data)
+        self.biz.create_for_policy(ApplicationType.GRANT_TEMPORARY_ACTION.value, application_data)
 
         return Response({}, status=status.HTTP_201_CREATED)

@@ -24,7 +24,7 @@ from backend.apps.policy.models import Policy
 from backend.apps.role.models import RoleUser
 from backend.apps.temporary_policy.models import TemporaryPolicy
 from backend.apps.user.models import UserPermissionCleanupRecord
-from backend.apps.user.tasks import user_permission_cleanup
+from backend.apps.user.tasks import user_permission_clean
 from backend.audit.audit import log_user_blacklist_event, log_user_permission_clean_event
 from backend.audit.constants import AuditSourceType, AuditType
 from backend.biz.group import GroupBiz
@@ -32,7 +32,6 @@ from backend.biz.role import RoleBiz
 from backend.biz.subject import SubjectBiz
 from backend.common.error_codes import error_codes
 from backend.common.pagination import CustomPageNumberPagination
-from backend.service.constants import SubjectType
 from backend.service.models import Subject
 
 logger = logging.getLogger("app")
@@ -41,7 +40,7 @@ logger = logging.getLogger("app")
 class AdminSubjectGroupViewSet(GenericViewSet):
     """Subject的用户组"""
 
-    pagination_class = None  # 去掉swagger中的limit offset参数
+    pagination_class = CustomPageNumberPagination
 
     authentication_classes = [ESBAuthentication]
     permission_classes = [AdminAPIPermission]
@@ -57,8 +56,11 @@ class AdminSubjectGroupViewSet(GenericViewSet):
     )
     def list(self, request, *args, **kwargs):
         subject = Subject(type=kwargs["subject_type"], id=kwargs["subject_id"])
-        relations = self.group_biz.list_subject_group(subject, is_recursive=True)
-        return Response([one.dict(include={"id", "name", "expired_at"}) for one in relations])
+        # 分页参数
+        limit, offset = CustomPageNumberPagination().get_limit_offset_pair(request)
+        count, relations = self.group_biz.list_paging_subject_group(subject, limit=limit, offset=offset)
+        results = [one.dict(include={"id", "name", "expired_at"}) for one in relations]
+        return Response({"count": count, "results": results})
 
 
 class AdminSubjectRoleViewSet(GenericViewSet):
@@ -133,7 +135,7 @@ class AdminSubjectFreezeViewSet(GenericViewSet):
 
         log_user_blacklist_event(
             AuditType.USER_BLACKLIST_MEMBER_CREATE.value,
-            Subject(type=SubjectType.USER.value, id=request.user.username),
+            Subject.from_username(request.user.username),
             serializer.data,
             extra={},
             source_type=AuditSourceType.OPENAPI.value,
@@ -157,7 +159,7 @@ class AdminSubjectFreezeViewSet(GenericViewSet):
 
         log_user_blacklist_event(
             AuditType.USER_BLACKLIST_MEMBER_DELETE.value,
-            Subject(type=SubjectType.USER.value, id=request.user.username),
+            Subject.from_username(request.user.username),
             serializer.data,
             extra={},
             source_type=AuditSourceType.OPENAPI.value,
@@ -195,10 +197,10 @@ class AdminSubjectPermissionCleanupViewSet(GenericViewSet):
 
         # 触发清理任务
         for r in records:
-            user_permission_cleanup.delay(r.username)
+            user_permission_clean.delay(r.username)
 
         log_user_permission_clean_event(
-            Subject(type=SubjectType.USER.value, id=request.user.username),
+            Subject.from_username(request.user.username),
             serializer.data,
             extra={},
             source_type=AuditSourceType.OPENAPI.value,
@@ -232,7 +234,7 @@ class AdminSubjectPermissionExistsViewSet(GenericViewSet):
         tags=["admin.subject.permission.exists"],
     )
     def list(self, request, *args, **kwargs):
-        subject = Subject(type=SubjectType.USER.value, id=kwargs["subject_id"])
+        subject = Subject.from_username(kwargs["subject_id"])
         if Policy.objects.filter(subject_type=subject.type, subject_id=subject.id).exists():
             return Response(True)
 
@@ -242,8 +244,8 @@ class AdminSubjectPermissionExistsViewSet(GenericViewSet):
         if RoleUser.objects.filter(username=subject.id).exists():
             return Response(True)
 
-        relations = self.group_biz.list_subject_group(subject, is_recursive=False)
-        if relations:
+        count, _ = self.group_biz.list_paging_subject_group(subject, limit=1)
+        if count:
             return Response(True)
 
         return Response(False)

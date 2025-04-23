@@ -9,6 +9,7 @@ an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express o
 specific language governing permissions and limitations under the License.
 """
 import logging
+import time
 from typing import Any, MutableMapping, Union
 
 from django.conf import settings
@@ -16,6 +17,7 @@ from rest_framework import serializers
 from rest_framework.serializers import empty
 
 from backend.apps.policy.serializers import AttributeSLZ
+from backend.common.time import PERMANENT_SECONDS
 
 logger = logging.getLogger("app")
 
@@ -79,7 +81,7 @@ class AccessSystemApplicationSLZ(serializers.Serializer):
             try:
                 self._convert_system(data)
                 for action in data.get("actions", []):
-                    for rrt in action.get("related_resource_types", []):
+                    for rrt in action.get("related_resource_types", None) or []:
                         self._convert_system(rrt)
                         for rrt_instance in rrt.get("instances", []):
                             for node in rrt_instance:
@@ -98,3 +100,26 @@ class AccessSystemApplicationSLZ(serializers.Serializer):
 
 class AccessSystemApplicationUrlSLZ(serializers.Serializer):
     url = serializers.URLField()
+
+
+class AccessSystemApplicationCustomPolicySLZ(AccessSystemApplicationSLZ):
+    """接入系统创建自定义申请单"""
+
+    applicant = serializers.CharField(label="申请者的用户名", max_length=32)
+    reason = serializers.CharField(label="申请理由", max_length=255)
+    expired_at = serializers.IntegerField(
+        label="过期时间", required=False, default=0, min_value=0, max_value=PERMANENT_SECONDS
+    )
+
+    def validate_expired_at(self, value):
+        """
+        验证过期时间
+        """
+        if 0 < value <= (time.time()):
+            raise serializers.ValidationError("greater than now timestamp")
+        return value
+
+
+class AccessSystemApplicationCustomPolicyResultSLZ(serializers.Serializer):
+    id = serializers.CharField(label="申请单据ID")
+    sn = serializers.CharField(label="ITSM审批单SN")

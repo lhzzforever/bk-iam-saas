@@ -1,0 +1,57 @@
+### 创建用户组
+
+#### Parameters
+
+| 字段 | 类型 | 位置 | 必须 | 描述 |
+|---|---|---|---|---|
+| system_id | string | path | 是 | 接入系统唯一标识 |
+| id | int 或 "-" | path | 是 | 分级管理员ID，`对于URL里不提供 grade_manager_id (值为横杠"-")，说明是对应{system_id}的系统管理员下创建用户组`  |
+| groups | array | body | 是 | 需要创建的用户组列表 |
+| sync_subject_template | bool | 否 | body |是否创建用户组的同步人员模版, 默认false |
+
+groups
+
+| 字段 |  类型 |是否必须  | 位置 |描述  |
+|--------|--------|--------|--------|--------|
+| name |  string  | 是   | body |用户组名称，至少5个字符，同一个分级管理员下唯一 |
+| description | string | 是 | body | 用户组描述，至少10个字符 |
+| readonly | bool | 否 | body |可选参数，默认为false, 用户组仅仅可读 |
+
+说明:
+
+readonly: True 时创建的用户组只能通过管理类api做管理, 在权限中心SaaS上该用户组只能查看, 不能做管理操作, 比如: 添加权限/添加成员/删除
+
+#### Request
+
+```json
+{
+  "groups": [
+    {
+      "name": "test1",
+      "description": "test1test1"
+    },
+    {
+      "name": "test2",
+      "description": "test1test2",
+      "readonly": true
+    },
+  ]
+}
+```
+
+#### Response
+
+| 字段      | 类型      | 描述      |
+|-----------|-----------|-----------|
+| data |  array[int]  | 用户组ID列表 |
+
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": [1, 2]
+}
+```
+
+{% include '_api_v2_status_code.md.j2' %}

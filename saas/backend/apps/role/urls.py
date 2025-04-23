@@ -8,7 +8,7 @@ Unless required by applicable law or agreed to in writing, software distributed 
 an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
 specific language governing permissions and limitations under the License.
 """
-from django.urls import path
+from django.urls import include, path
 
 from . import views
 
@@ -85,5 +85,62 @@ urlpatterns = [
         "query_authorized_subjects/export/",
         views.QueryAuthorizedSubjectsViewSet.as_view({"post": "export"}),
         name="role.query_authorized_subjects.export",
+    ),
+    # 子集管理员
+    path(
+        "subset_managers/",
+        views.SubsetManagerViewSet.as_view({"get": "list", "post": "create"}),
+        name="role.subset_manager",
+    ),
+    path(
+        "subset_managers/<int:id>/",
+        views.SubsetManagerViewSet.as_view({"get": "retrieve", "put": "update", "patch": "partial_update"}),
+        name="role.subset_manager_detail",
+    ),
+    path(
+        "grade_managers/<int:id>/subset_managers/",
+        views.UserSubsetManagerViewSet.as_view({"get": "list"}),
+        name="role.user_subset_manager",
+    ),
+    path("subject_scope_check/", views.RoleSubjectScopCheckView.as_view(), name="role.subject_scope_check"),
+    path("search/", views.RoleSearchViewSet.as_view({"get": "list"}), name="role.role_search"),
+    path("group_config/", views.RoleGroupConfigView.as_view(), name="role.group_config"),
+    path("group_members/", views.RoleGroupMemberViewSet.as_view({"post": "list"}), name="role.group_member"),
+    path(
+        "group_members/clean/",
+        views.RoleGroupMemberCleanViewSet.as_view({"post": "create"}),
+        name="role.group_member_clean",
+    ),
+    path(
+        "group_members/reset/",
+        views.RoleGroupMemberResetViewSet.as_view({"post": "create"}),
+        name="role.group_member_reset",
+    ),
+    path(
+        "group_members/<str:subject_type>/<str:subject_id>/",
+        include(
+            [
+                path(
+                    "subject_template_groups/",
+                    views.RoleGroupMemberTemplateGroupViewSet.as_view({"post": "list"}),
+                    name="role.role_group_member_subject_template_group",
+                ),
+                path(
+                    "departments/-/subject_template_groups/",
+                    views.RoleGroupMemberDepartmentTemplateGroupViewSet.as_view({"post": "list"}),
+                    name="subject.department.role_group_member_subject_template_group",
+                ),
+                path(
+                    "groups/",
+                    views.RoleGroupMemberGroupViewSet.as_view({"post": "list"}),
+                    name="role.role_group_member_group",
+                ),
+                path(
+                    "departments/-/groups/",
+                    views.RoleGroupMemberDepartmentGroupViewSet.as_view({"post": "list"}),
+                    name="subject.department.role_group_member_group",
+                ),
+            ]
+        ),
     ),
 ]

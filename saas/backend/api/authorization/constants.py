@@ -35,10 +35,10 @@ class AllowListMatchOperationEnum(ChoicesEnum, LowerStrEnum):
     STARTS_WITH = auto()
 
 
-AllowListObjectOperationSep = ":"
+ALLOW_LIST_OBJECT_OPERATION_STEP = ":"
 
 
-class VerifyAPIParamLocationEnum(ChoicesEnum, LowerStrEnum):
+class VerifyApiParamLocationEnum(ChoicesEnum, LowerStrEnum):
     SYSTEM_IN_BODY = auto()
     RESOURCE_TYPE_IN_BODY = auto()
     ACTION_IN_BODY = auto()

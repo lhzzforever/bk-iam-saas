@@ -8,6 +8,7 @@ Unless required by applicable law or agreed to in writing, software distributed 
 an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
 specific language governing permissions and limitations under the License.
 """
+from bk_notice_sdk import config
 from django.conf import settings
 from django.conf.urls import include, url
 from django.views.decorators.cache import never_cache
@@ -17,6 +18,7 @@ from rest_framework import permissions
 
 # Monkey Patch: rest_framework.serializers.Serializer
 import backend.util.serializer_patch  # noqa
+from backend.common.views import login_exempt
 from backend.common.vue import LoginSuccessView, VueTemplateView
 
 schema_view = get_schema_view(
@@ -48,9 +50,10 @@ urlpatterns = [
                 url(r"^approvals/", include("backend.apps.approval.urls")),
                 url(r"^groups/", include("backend.apps.group.urls")),
                 url(r"^subjects/", include("backend.apps.subject.urls")),
+                url(r"^subject_templates/", include("backend.apps.subject_template.urls")),
                 url(r"^templates/", include("backend.apps.template.urls")),
                 url(r"^organizations/", include("backend.apps.organization.urls")),
-                url(r"^open/", include("backend.api.urls")),
+                url(r"^open/", include("backend.api.urls_v1")),
                 url(r"^roles/", include("backend.apps.role.urls")),
                 url(r"^users/", include("backend.apps.user.urls")),
                 url(r"^modeling/", include("backend.apps.model_builder.urls")),
@@ -59,17 +62,28 @@ urlpatterns = [
                 url(r"^handover/", include("backend.apps.handover.urls")),
                 url(r"^mgmt/", include("backend.apps.mgmt.urls")),
                 url(r"^temporary_policies/", include("backend.apps.temporary_policy.urls")),
+                url(r"^iam/", include("backend.iam.urls")),
+                # notice
+                url(r"^{}".format(config.ENTRANCE_URL), include(("bk_notice_sdk.urls", "notice"), namespace="notice")),
+            ]
+        ),
+    ),
+    url(
+        r"^api/v2/",
+        include(
+            [
+                url(r"^open/", include("backend.api.urls_v2")),
             ]
         ),
     ),
     # healthz
     url("", include("backend.healthz.urls")),
     # prometheus
-    url("", include("django_prometheus.urls")),
+    url("", include("backend.metrics.urls")),
 ]
 
 # add swagger api document
-if settings.IS_LOCAL:
+if settings.IS_LOCAL or settings.ENABLE_SWAGGER:
     urlpatterns += [
         url(r"^swagger/$", schema_view.with_ui("swagger", cache_timeout=0), name="schema-swagger-ui"),
     ]
@@ -77,5 +91,5 @@ if settings.IS_LOCAL:
 # static file
 urlpatterns += [
     url(r"^login_success/", never_cache(LoginSuccessView.as_view())),
-    url(r"^.*$", never_cache(VueTemplateView.as_view())),
+    url(r"^.*$", never_cache(login_exempt(VueTemplateView.as_view()))),
 ]

@@ -9,6 +9,15 @@ an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express o
 specific language governing permissions and limitations under the License.
 """
 
+from .group_member import (
+    RoleGroupMemberCleanViewSet,
+    RoleGroupMemberDepartmentGroupViewSet,
+    RoleGroupMemberDepartmentTemplateGroupViewSet,
+    RoleGroupMemberGroupViewSet,
+    RoleGroupMemberResetViewSet,
+    RoleGroupMemberTemplateGroupViewSet,
+    RoleGroupMemberViewSet,
+)
 from .permission_audit import QueryAuthorizedSubjectsViewSet
 from .role import (
     AuthScopeIncludeUserRoleView,
@@ -16,13 +25,18 @@ from .role import (
     MemberSystemPermissionView,
     RoleAuthorizationScopeView,
     RoleCommonActionViewSet,
+    RoleGroupConfigView,
     RoleGroupMembersRenewViewSet,
     RoleGroupRenewViewSet,
     RoleMemberView,
+    RoleSearchViewSet,
+    RoleSubjectScopCheckView,
     RoleSubjectScopeView,
+    SubsetManagerViewSet,
     SuperManagerMemberViewSet,
     SystemManagerMemberView,
     SystemManagerViewSet,
+    UserSubsetManagerViewSet,
     UserView,
 )
 
@@ -33,12 +47,24 @@ __all__ = [
     "MemberSystemPermissionView",
     "RoleAuthorizationScopeView",
     "RoleCommonActionViewSet",
+    "RoleGroupConfigView",
     "RoleGroupMembersRenewViewSet",
     "RoleGroupRenewViewSet",
     "RoleMemberView",
+    "RoleSearchViewSet",
     "RoleSubjectScopeView",
     "SuperManagerMemberViewSet",
     "SystemManagerMemberView",
     "SystemManagerViewSet",
     "UserView",
+    "SubsetManagerViewSet",
+    "UserSubsetManagerViewSet",
+    "RoleSubjectScopCheckView",
+    "RoleGroupMemberViewSet",
+    "RoleGroupMemberTemplateGroupViewSet",
+    "RoleGroupMemberDepartmentTemplateGroupViewSet",
+    "RoleGroupMemberGroupViewSet",
+    "RoleGroupMemberDepartmentGroupViewSet",
+    "RoleGroupMemberCleanViewSet",
+    "RoleGroupMemberResetViewSet",
 ]
